@@ -1,6 +1,6 @@
 #[derive(Debug, PartialEq, Eq)]
 #[rustfmt::skip]
-enum Token {
+pub(crate) enum Token {
     /// Instruction mnemonics
     Ihalt, Inop,
     Irrmovq, Iirmovq, Irmmovq, Imrmovq,
@@ -25,7 +25,7 @@ enum Token {
     Colon, Lparen, Rparen, Comma,
 }
 
-fn lex(src: String) -> Vec<Token> {
+pub(crate) fn lex(src: String) -> Vec<Token> {
     let mut tokens = Vec::new();
 
     let mut chars = src.chars().peekable();
