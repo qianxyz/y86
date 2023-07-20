@@ -83,8 +83,9 @@ impl Iterator for Parser<'_> {
 
                 Token::Iirmovq => {
                     let value = match self.require_token()? {
-                        Token::Dollar => self.assert_constant()?,
-                        t => t.try_into()?,
+                        Token::Dollar => Constant::Literal(self.assert_number()?),
+                        Token::Label(s) => Constant::Label(s),
+                        _ => return Err(SyntaxError),
                     };
                     self.assert_token(Token::Comma)?;
                     let dest = self.assert_register()?;
