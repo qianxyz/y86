@@ -43,6 +43,7 @@ impl<'a> Parser<'a> {
 
     /// Assert the next token is a constant (immediate value or label).
     fn assert_constant(&mut self) -> Result<Constant, SyntaxError> {
+        // FIXME: `$` should be required before a number as a constant
         self.require_token()?.try_into()
     }
 
