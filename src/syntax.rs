@@ -17,6 +17,7 @@ pub(crate) enum Register {
     R14,
 }
 
+/// Operator variants for `OPq` instructions.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Op {
     Add,
@@ -25,6 +26,7 @@ pub(crate) enum Op {
     Xor,
 }
 
+/// Condition variants for `jXX` and `cmovXX` instructions.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Cond {
     Always,
@@ -75,5 +77,89 @@ pub(crate) enum Token {
     Dollar,
 }
 
-#[derive(Debug)]
+impl TryFrom<Token> for Register {
+    type Error = SyntaxError;
+
+    fn try_from(t: Token) -> Result<Self, Self::Error> {
+        match t {
+            Token::Reg(r) => Ok(r),
+            _ => Err(SyntaxError),
+        }
+    }
+}
+
+/// A constant value, which can be an immediate value or a label.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Constant {
+    Literal(u64),
+    Label(String),
+}
+
+impl TryFrom<Token> for Constant {
+    type Error = SyntaxError;
+
+    fn try_from(t: Token) -> Result<Self, Self::Error> {
+        match t {
+            Token::Number(n) => Ok(Self::Literal(n)),
+            Token::Label(s) => Ok(Self::Label(s)),
+            _ => Err(SyntaxError),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Statement {
+    // Label definitions
+    LabelDef(String),
+
+    // Directives
+    Dbyte(u8),
+    Dword(u16),
+    Dlong(u32),
+    Dquad(u64),
+    Dpos(u64),
+    Dalign(u64),
+
+    // Instructions
+    Ihalt,
+    Inop,
+    Irrmovq {
+        src: Register,
+        dest: Register,
+    },
+    Iirmovq {
+        dest: Register,
+        value: Constant,
+    },
+    Irmmovq {
+        src: Register,
+        dest: Register,
+        offset: Constant,
+    },
+    Imrmovq {
+        src: Register,
+        dest: Register,
+        offset: Constant,
+    },
+    Iopq {
+        op: Op,
+        src: Register,
+        dest: Register,
+    },
+    Ij {
+        cond: Cond,
+        target: Constant,
+    },
+    Icmov {
+        cond: Cond,
+        src: Register,
+        dest: Register,
+    },
+    Icall(Constant),
+    Iret,
+    Ipushq(Register),
+    Ipopq(Register),
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SyntaxError; // TODO: Context

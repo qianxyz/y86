@@ -2,12 +2,12 @@ use std::{iter::Peekable, str::Chars};
 
 use crate::syntax::*;
 
-struct Lexer<'a> {
+pub(crate) struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
 }
 
 impl<'a> Lexer<'a> {
-    fn new(src: &'a str) -> Self {
+    pub(crate) fn new(src: &'a str) -> Self {
         Self {
             chars: src.chars().peekable(),
         }
@@ -31,6 +31,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Consume and collect the characters while the predicate holds.
+    /// This is similar to `take_while` for generic iterators,
+    /// except that it does not consume one more character
+    /// (as the underlying iterator is peekable).
     fn collect_while<P>(&mut self, mut pred: P) -> String
     where
         P: FnMut(&char) -> bool,
@@ -107,6 +111,7 @@ impl<'a> Lexer<'a> {
         Ok(Token::Reg(reg))
     }
 
+    /// Read a symbol, which can be a mnemonic or a label.
     fn read_symbol(&mut self) -> Result<Token, SyntaxError> {
         let s = self.collect_while(|c| c.is_ascii_alphanumeric() || *c == '_');
 
@@ -149,10 +154,11 @@ impl<'a> Lexer<'a> {
 impl Iterator for Lexer<'_> {
     type Item = Result<Token, SyntaxError>;
 
+    /// Yield the next token or a syntax error.
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
 
-        let Some(&c) = self.chars.peek() else { return None; };
+        let c = *self.chars.peek()?;
 
         let result = match c {
             '#' => {
@@ -179,7 +185,10 @@ impl Iterator for Lexer<'_> {
             c if c.is_ascii_digit() => self.read_number(),
             c if c.is_ascii_alphabetic() => self.read_symbol(),
 
-            _ => Err(SyntaxError),
+            _ => {
+                self.chars.next();
+                Err(SyntaxError)
+            }
         };
 
         Some(result)
@@ -275,7 +284,8 @@ stack:
         ];
 
         let lexer = Lexer::new(src);
-        let tokens = lexer.collect::<Result<Vec<_>, _>>().unwrap();
-        assert_eq!(tokens, expected);
+        for (token, exp) in lexer.zip(expected) {
+            assert_eq!(token, Ok(exp));
+        }
     }
 }

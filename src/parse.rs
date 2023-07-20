@@ -1,404 +1,320 @@
-use crate::lex::Token;
+use crate::{lex::*, syntax::*};
 
-impl From<Token> for Register {
-    fn from(value: Token) -> Self {
-        match value {
-            Token::Rax => Self::Rax,
-            Token::Rcx => Self::Rcx,
-            Token::Rdx => Self::Rdx,
-            Token::Rbx => Self::Rbx,
-            Token::Rsp => Self::Rsp,
-            Token::Rbp => Self::Rbp,
-            Token::Rsi => Self::Rsi,
-            Token::Rdi => Self::Rdi,
-            Token::R8 => Self::R8,
-            Token::R9 => Self::R9,
-            Token::R10 => Self::R10,
-            Token::R11 => Self::R11,
-            Token::R12 => Self::R12,
-            Token::R13 => Self::R13,
-            Token::R14 => Self::R14,
-            _ => todo!(),
+struct Parser<'a> {
+    tokens: Lexer<'a>,
+}
+
+impl<'a> Parser<'a> {
+    fn new(src: &'a str) -> Self {
+        Self {
+            tokens: Lexer::new(src),
         }
     }
-}
 
-#[derive(Debug, PartialEq, Eq)]
-enum Constant {
-    Literal(u64),
-    Label(String),
-}
-
-impl From<Token> for Constant {
-    fn from(value: Token) -> Self {
-        match value {
-            Token::Number(n) => Self::Literal(n),
-            Token::Label(s) => Self::Label(s),
-            _ => todo!(),
+    /// Require a token, err if no more is available.
+    fn require_token(&mut self) -> Result<Token, SyntaxError> {
+        match self.tokens.next() {
+            Some(r) => r,
+            None => Err(SyntaxError),
         }
     }
-}
 
-#[derive(Debug, PartialEq, Eq)]
-enum Statement {
-    // Label definitions
-    LabelDef(String),
+    /// Assert the next token is as expected.
+    fn assert_token(&mut self, expected: Token) -> Result<(), SyntaxError> {
+        if self.require_token()? == expected {
+            Ok(())
+        } else {
+            Err(SyntaxError)
+        }
+    }
 
-    // Directives
-    Dbyte(u8),
-    Dword(u16),
-    Dlong(u32),
-    Dquad(u64),
-    Dpos(u64),
-    Dalign(u64),
+    /// Assert the next token is a register.
+    fn assert_register(&mut self) -> Result<Register, SyntaxError> {
+        self.require_token()?.try_into()
+    }
 
-    // Instructions
-    Ihalt,
-    Inop,
-    Irrmovq {
-        ra: Register,
-        rb: Register,
-    },
-    Iirmovq {
-        v: Constant,
-        rb: Register,
-    },
-    Irmmovq {
-        ra: Register,
-        d: Constant,
-        rb: Register,
-    },
-    Imrmovq {
-        d: Constant,
-        rb: Register,
-        ra: Register,
-    },
-    Iaddq(Register, Register),
-    Isubq(Register, Register),
-    Iandq(Register, Register),
-    Ixorq(Register, Register),
-    Ijmp(Constant),
-    Ijle(Constant),
-    Ijl(Constant),
-    Ije(Constant),
-    Ijne(Constant),
-    Ijge(Constant),
-    Ijg(Constant),
-    Icmovle(Register, Register),
-    Icmovl(Register, Register),
-    Icmove(Register, Register),
-    Icmovne(Register, Register),
-    Icmovge(Register, Register),
-    Icmovg(Register, Register),
-    Icall(Constant),
-    Iret,
-    Ipushq(Register),
-    Ipopq(Register),
-}
+    /// Assert the next token is an immediate number.
+    fn assert_number(&mut self) -> Result<u64, SyntaxError> {
+        match self.require_token()? {
+            Token::Number(n) => Ok(n),
+            _ => Err(SyntaxError),
+        }
+    }
 
-fn parse(tokens: Vec<Token>) -> Vec<Statement> {
-    let mut statements = Vec::new();
+    /// Assert the next token is a constant (immediate value or label).
+    fn assert_constant(&mut self) -> Result<Constant, SyntaxError> {
+        self.require_token()?.try_into()
+    }
 
-    let mut iter = tokens.into_iter();
-
-    while let Some(token) = iter.next() {
-        let statement = match token {
-            Token::Ihalt => Statement::Ihalt,
-            Token::Inop => Statement::Inop,
-
-            Token::Irrmovq => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Irrmovq { ra, rb }
+    /// Assert the following tokens represent a memory reference,
+    /// i.e. `(<reg>)` or `<offset>(<reg>)`.
+    fn assert_memory(&mut self) -> Result<(Constant, Register), SyntaxError> {
+        let offset = match self.require_token()? {
+            Token::Lparen => Constant::Literal(0),
+            t => {
+                self.assert_token(Token::Lparen)?;
+                t.try_into()?
             }
-            Token::Iirmovq => {
-                let v: Constant = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Iirmovq { v, rb }
-            }
-            Token::Irmmovq => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let d: Constant = match iter.next().unwrap() {
-                    Token::Lparen => Constant::Literal(0),
-                    t => {
-                        assert_eq!(iter.next(), Some(Token::Lparen));
-                        t.into()
-                    }
-                };
-                let rb: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Rparen));
-                Statement::Irmmovq { ra, d, rb }
-            }
-            Token::Imrmovq => {
-                let d: Constant = match iter.next().unwrap() {
-                    Token::Lparen => Constant::Literal(0),
-                    t => {
-                        assert_eq!(iter.next(), Some(Token::Lparen));
-                        t.into()
-                    }
-                };
-                let rb: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Rparen));
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let ra: Register = iter.next().unwrap().into();
-                Statement::Imrmovq { ra, d, rb }
-            }
-
-            Token::Iaddq => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Iaddq(ra, rb)
-            }
-            Token::Isubq => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Isubq(ra, rb)
-            }
-            Token::Iandq => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Iandq(ra, rb)
-            }
-            Token::Ixorq => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Ixorq(ra, rb)
-            }
-
-            Token::Ijmp => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Ijmp(dest)
-            }
-            Token::Ijle => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Ijle(dest)
-            }
-            Token::Ijl => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Ijl(dest)
-            }
-            Token::Ije => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Ije(dest)
-            }
-            Token::Ijne => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Ijne(dest)
-            }
-            Token::Ijge => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Ijge(dest)
-            }
-            Token::Ijg => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Ijg(dest)
-            }
-
-            Token::Icmovle => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Icmovle(ra, rb)
-            }
-            Token::Icmovl => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Icmovl(ra, rb)
-            }
-            Token::Icmove => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Icmove(ra, rb)
-            }
-            Token::Icmovne => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Icmovne(ra, rb)
-            }
-            Token::Icmovge => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Icmovge(ra, rb)
-            }
-            Token::Icmovg => {
-                let ra: Register = iter.next().unwrap().into();
-                assert_eq!(iter.next(), Some(Token::Comma));
-                let rb: Register = iter.next().unwrap().into();
-                Statement::Icmovg(ra, rb)
-            }
-
-            Token::Icall => {
-                let dest: Constant = iter.next().unwrap().into();
-                Statement::Icall(dest)
-            }
-            Token::Iret => Statement::Iret,
-
-            Token::Ipushq => {
-                let ra: Register = iter.next().unwrap().into();
-                Statement::Ipushq(ra)
-            }
-            Token::Ipopq => {
-                let ra: Register = iter.next().unwrap().into();
-                Statement::Ipopq(ra)
-            }
-
-            Token::Label(s) => {
-                assert_eq!(iter.next(), Some(Token::Colon));
-                Statement::LabelDef(s)
-            }
-
-            Token::Dbyte => {
-                let Some(Token::Number(n)) = iter.next() else {
-                    todo!()
-                };
-                Statement::Dbyte(n as u8)
-            }
-            Token::Dword => {
-                let Some(Token::Number(n)) = iter.next() else {
-                    todo!()
-                };
-                Statement::Dword(n as u16)
-            }
-            Token::Dlong => {
-                let Some(Token::Number(n)) = iter.next() else {
-                    todo!()
-                };
-                Statement::Dlong(n as u32)
-            }
-            Token::Dquad => {
-                let Some(Token::Number(n)) = iter.next() else {
-                    todo!()
-                };
-                Statement::Dquad(n as u64)
-            }
-            Token::Dpos => {
-                let Some(Token::Number(n)) = iter.next() else {
-                    todo!()
-                };
-                Statement::Dpos(n)
-            }
-            Token::Dalign => {
-                let Some(Token::Number(n)) = iter.next() else {
-                    todo!()
-                };
-                Statement::Dalign(n)
-            }
-
-            _ => todo!(),
         };
+        let reg = self.assert_register()?;
+        self.assert_token(Token::Rparen)?;
 
-        statements.push(statement);
+        Ok((offset, reg))
     }
+}
 
-    statements
+impl Iterator for Parser<'_> {
+    type Item = Result<Statement, SyntaxError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let r = self.tokens.next()?;
+
+        let result = (|| {
+            let stmt = match r? {
+                Token::Ihalt => Statement::Ihalt,
+                Token::Inop => Statement::Inop,
+
+                Token::Irrmovq => {
+                    let src = self.assert_register()?;
+                    self.assert_token(Token::Comma)?;
+                    let dest = self.assert_register()?;
+                    Statement::Irrmovq { src, dest }
+                }
+
+                Token::Iirmovq => {
+                    let value = match self.require_token()? {
+                        Token::Dollar => self.assert_constant()?,
+                        t => t.try_into()?,
+                    };
+                    self.assert_token(Token::Comma)?;
+                    let dest = self.assert_register()?;
+                    Statement::Iirmovq { dest, value }
+                }
+
+                Token::Irmmovq => {
+                    let src = self.assert_register()?;
+                    self.assert_token(Token::Comma)?;
+                    let (offset, dest) = self.assert_memory()?;
+                    Statement::Irmmovq { src, dest, offset }
+                }
+
+                Token::Imrmovq => {
+                    let (offset, src) = self.assert_memory()?;
+                    self.assert_token(Token::Comma)?;
+                    let dest = self.assert_register()?;
+                    Statement::Imrmovq { src, dest, offset }
+                }
+
+                Token::Iopq(op) => {
+                    let src = self.assert_register()?;
+                    self.assert_token(Token::Comma)?;
+                    let dest = self.assert_register()?;
+                    Statement::Iopq { op, src, dest }
+                }
+
+                Token::Ij(cond) => {
+                    let target = self.assert_constant()?;
+                    Statement::Ij { cond, target }
+                }
+
+                Token::Icmov(cond) => {
+                    let src = self.assert_register()?;
+                    self.assert_token(Token::Comma)?;
+                    let dest = self.assert_register()?;
+                    Statement::Icmov { cond, src, dest }
+                }
+
+                Token::Icall => {
+                    let target = self.assert_constant()?;
+                    Statement::Icall(target)
+                }
+                Token::Iret => Statement::Iret,
+
+                Token::Ipushq => {
+                    let reg = self.assert_register()?;
+                    Statement::Ipushq(reg)
+                }
+                Token::Ipopq => {
+                    let reg = self.assert_register()?;
+                    Statement::Ipopq(reg)
+                }
+
+                Token::Label(s) => {
+                    self.assert_token(Token::Colon)?;
+                    Statement::LabelDef(s)
+                }
+
+                Token::Dbyte => {
+                    let n = self.assert_number()?;
+                    Statement::Dbyte(n as u8)
+                }
+                Token::Dword => {
+                    let n = self.assert_number()?;
+                    Statement::Dword(n as u16)
+                }
+                Token::Dlong => {
+                    let n = self.assert_number()?;
+                    Statement::Dlong(n as u32)
+                }
+                Token::Dquad => {
+                    let n = self.assert_number()?;
+                    Statement::Dquad(n)
+                }
+                Token::Dpos => {
+                    let n = self.assert_number()?;
+                    Statement::Dpos(n)
+                }
+                Token::Dalign => {
+                    let n = self.assert_number()?;
+                    Statement::Dalign(n)
+                }
+
+                _ => return Err(SyntaxError),
+            };
+
+            Ok(stmt)
+        })();
+
+        Some(result)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use Token::*;
+    use Cond::*;
+    use Constant::*;
+    use Op::*;
+    use Register::*;
+    use Statement::*;
 
     #[test]
     fn sum() {
-        #[rustfmt::skip]
-        let tokens = vec![
-            Dpos, Number(0),
-            Iirmovq, Label("stack".to_string()), Comma, Rsp,
-            Icall, Label("main".to_string()),
-            Ihalt,
-            Dalign, Number(8),
-            Label("array".to_string()), Colon,
-            Dquad, Number(0x000d000d000d),
-            Dquad, Number(0x00c000c000c0),
-            Dquad, Number(0x0b000b000b00),
-            Dquad, Number(0xa000a000a000),
-            Label("main".to_string()), Colon,
-            Iirmovq, Label("array".to_string()), Comma, Rdi,
-            Iirmovq, Number(4), Comma, Rsi,
-            Icall, Label("sum".to_string()),
-            Iret,
-            Label("sum".to_string()), Colon,
-            Iirmovq, Number(8), Comma, R8,
-            Iirmovq, Number(1), Comma, R9,
-            Ixorq, Rax, Comma, Rax,
-            Iandq, Rsi, Comma, Rsi,
-            Ijmp, Label("test".to_string()),
-            Label("loop".to_string()), Colon,
-            Imrmovq, Lparen, Rdi, Rparen, Comma, R10,
-            Iaddq, R10, Comma, Rax,
-            Iaddq, R8, Comma, Rdi,
-            Isubq, R9, Comma, Rsi,
-            Label("test".to_string()), Colon,
-            Ijne, Label("loop".to_string()),
-            Iret,
-            Dpos, Number(0x200),
-            Label("stack".to_string()), Colon,
-        ];
+        let src = "\
+# Execution begins at address 0
+        .pos 0
+        irmovq stack, %rsp  	# Set up stack pointer
+        call main		# Execute main program
+        halt			# Terminate program
+
+# Array of 4 elements
+        .align 8
+array: 
+        .quad 0x000d000d000d
+        .quad 0x00c000c000c0
+        .quad 0x0b000b000b00
+        .quad 0xa000a000a000
+
+main:
+        irmovq array,%rdi
+        irmovq $4,%rsi
+        call sum		# sum(array, 4)
+        ret
+
+# long sum(long *start, long count)
+# start in %rdi, count in %rsi
+sum:
+        irmovq $8,%r8        # Constant 8
+        irmovq $1,%r9	     # Constant 1
+        xorq %rax,%rax	     # sum = 0
+        andq %rsi,%rsi	     # Set CC
+        jmp     test         # Goto test
+loop:
+        mrmovq (%rdi),%r10   # Get *start
+        addq %r10,%rax       # Add to sum
+        addq %r8,%rdi        # start++
+        subq %r9,%rsi        # count--.  Set CC
+test:
+        jne    loop          # Stop when 0
+        ret                  # Return
+
+# Stack starts here and grows to lower addresses
+        .pos 0x200
+stack:
+";
 
         let expected = vec![
-            Statement::Dpos(0),
-            Statement::Iirmovq {
-                v: Constant::Label("stack".to_string()),
-                rb: Register::Rsp,
+            Dpos(0),
+            Iirmovq {
+                dest: Rsp,
+                value: Label("stack".to_string()),
             },
-            Statement::Icall(Constant::Label("main".to_string())),
-            Statement::Ihalt,
-            Statement::Dalign(8),
-            Statement::LabelDef("array".to_string()),
-            Statement::Dquad(0x000d000d000d),
-            Statement::Dquad(0x00c000c000c0),
-            Statement::Dquad(0x0b000b000b00),
-            Statement::Dquad(0xa000a000a000),
-            Statement::LabelDef("main".to_string()),
-            Statement::Iirmovq {
-                v: Constant::Label("array".to_string()),
-                rb: Register::Rdi,
+            Icall(Label("main".to_string())),
+            Ihalt,
+            Dalign(8),
+            LabelDef("array".to_string()),
+            Dquad(0x000d000d000d),
+            Dquad(0x00c000c000c0),
+            Dquad(0x0b000b000b00),
+            Dquad(0xa000a000a000),
+            LabelDef("main".to_string()),
+            Iirmovq {
+                dest: Rdi,
+                value: Label("array".to_string()),
             },
-            Statement::Iirmovq {
-                v: Constant::Literal(4),
-                rb: Register::Rsi,
+            Iirmovq {
+                dest: Rsi,
+                value: Literal(4),
             },
-            Statement::Icall(Constant::Label("sum".to_string())),
-            Statement::Iret,
-            Statement::LabelDef("sum".to_string()),
-            Statement::Iirmovq {
-                v: Constant::Literal(8),
-                rb: Register::R8,
+            Icall(Label("sum".to_string())),
+            Iret,
+            LabelDef("sum".to_string()),
+            Iirmovq {
+                dest: R8,
+                value: Literal(8),
             },
-            Statement::Iirmovq {
-                v: Constant::Literal(1),
-                rb: Register::R9,
+            Iirmovq {
+                dest: R9,
+                value: Literal(1),
             },
-            Statement::Ixorq(Register::Rax, Register::Rax),
-            Statement::Iandq(Register::Rsi, Register::Rsi),
-            Statement::Ijmp(Constant::Label("test".to_string())),
-            Statement::LabelDef("loop".to_string()),
-            Statement::Imrmovq {
-                d: Constant::Literal(0),
-                rb: Register::Rdi,
-                ra: Register::R10,
+            Iopq {
+                op: Xor,
+                src: Rax,
+                dest: Rax,
             },
-            Statement::Iaddq(Register::R10, Register::Rax),
-            Statement::Iaddq(Register::R8, Register::Rdi),
-            Statement::Isubq(Register::R9, Register::Rsi),
-            Statement::LabelDef("test".to_string()),
-            Statement::Ijne(Constant::Label("loop".to_string())),
-            Statement::Iret,
-            Statement::Dpos(0x200),
-            Statement::LabelDef("stack".to_string()),
+            Iopq {
+                op: And,
+                src: Rsi,
+                dest: Rsi,
+            },
+            Ij {
+                cond: Always,
+                target: Label("test".to_string()),
+            },
+            LabelDef("loop".to_string()),
+            Imrmovq {
+                src: Rdi,
+                dest: R10,
+                offset: Literal(0),
+            },
+            Iopq {
+                op: Add,
+                src: R10,
+                dest: Rax,
+            },
+            Iopq {
+                op: Add,
+                src: R8,
+                dest: Rdi,
+            },
+            Iopq {
+                op: Sub,
+                src: R9,
+                dest: Rsi,
+            },
+            LabelDef("test".to_string()),
+            Ij {
+                cond: Ne,
+                target: Label("loop".to_string()),
+            },
+            Iret,
+            Dpos(0x200),
+            LabelDef("stack".to_string()),
         ];
 
-        assert_eq!(parse(tokens), expected);
+        let parser = Parser::new(src);
+        for (stmt, exp) in parser.zip(expected) {
+            assert_eq!(stmt, Ok(exp));
+        }
     }
 }
