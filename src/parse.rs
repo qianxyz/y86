@@ -225,83 +225,68 @@ test:
 stack:
 ";
 
+        macro_rules! irmovq {
+            ($r:ident, $s:expr) => {
+                Iirmovq {
+                    dest: $r,
+                    value: Label($s.to_string()),
+                }
+            };
+            ($r:ident, $n:expr, u64) => {
+                Iirmovq {
+                    dest: $r,
+                    value: Literal($n),
+                }
+            };
+        }
+
+        let def = |s: &str| LabelDef(s.to_string());
+        let op = |op, src, dest| Iopq { op, src, dest };
+        let j = |cond, s: &str| Ij {
+            cond,
+            target: Label(s.to_string()),
+        };
+
         let expected = vec![
             Dpos(0),
-            Iirmovq {
-                dest: Rsp,
-                value: Label("stack".to_string()),
-            },
+            irmovq!(Rsp, "stack"),
             Icall(Label("main".to_string())),
             Ihalt,
+            //
             Dalign(8),
-            LabelDef("array".to_string()),
+            def("array"),
             Dquad(0x000d000d000d),
             Dquad(0x00c000c000c0),
             Dquad(0x0b000b000b00),
             Dquad(0xa000a000a000),
-            LabelDef("main".to_string()),
-            Iirmovq {
-                dest: Rdi,
-                value: Label("array".to_string()),
-            },
-            Iirmovq {
-                dest: Rsi,
-                value: Literal(4),
-            },
+            //
+            def("main"),
+            irmovq!(Rdi, "array"),
+            irmovq!(Rsi, 4, u64),
             Icall(Label("sum".to_string())),
             Iret,
-            LabelDef("sum".to_string()),
-            Iirmovq {
-                dest: R8,
-                value: Literal(8),
-            },
-            Iirmovq {
-                dest: R9,
-                value: Literal(1),
-            },
-            Iopq {
-                op: Xor,
-                src: Rax,
-                dest: Rax,
-            },
-            Iopq {
-                op: And,
-                src: Rsi,
-                dest: Rsi,
-            },
-            Ij {
-                cond: Always,
-                target: Label("test".to_string()),
-            },
-            LabelDef("loop".to_string()),
+            //
+            def("sum"),
+            irmovq!(R8, 8, u64),
+            irmovq!(R9, 1, u64),
+            op(Xor, Rax, Rax),
+            op(And, Rsi, Rsi),
+            j(Always, "test"),
+            def("loop"),
             Imrmovq {
                 src: Rdi,
                 dest: R10,
                 offset: Literal(0),
             },
-            Iopq {
-                op: Add,
-                src: R10,
-                dest: Rax,
-            },
-            Iopq {
-                op: Add,
-                src: R8,
-                dest: Rdi,
-            },
-            Iopq {
-                op: Sub,
-                src: R9,
-                dest: Rsi,
-            },
-            LabelDef("test".to_string()),
-            Ij {
-                cond: Ne,
-                target: Label("loop".to_string()),
-            },
+            op(Add, R10, Rax),
+            op(Add, R8, Rdi),
+            op(Sub, R9, Rsi),
+            def("test"),
+            j(Ne, "loop"),
             Iret,
+            //
             Dpos(0x200),
-            LabelDef("stack".to_string()),
+            def("stack"),
         ];
 
         let parser = Parser::new(src);
