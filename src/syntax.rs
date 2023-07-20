@@ -77,34 +77,11 @@ pub(crate) enum Token {
     Dollar,
 }
 
-impl TryFrom<Token> for Register {
-    type Error = SyntaxError;
-
-    fn try_from(t: Token) -> Result<Self, Self::Error> {
-        match t {
-            Token::Reg(r) => Ok(r),
-            _ => Err(SyntaxError),
-        }
-    }
-}
-
-/// A constant value, which can be an immediate value or a label.
+/// A constant value, which can be a literal (preceded by `$`) or a label.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Constant {
     Literal(u64),
     Label(String),
-}
-
-impl TryFrom<Token> for Constant {
-    type Error = SyntaxError;
-
-    fn try_from(t: Token) -> Result<Self, Self::Error> {
-        match t {
-            Token::Number(n) => Ok(Self::Literal(n)),
-            Token::Label(s) => Ok(Self::Label(s)),
-            _ => Err(SyntaxError),
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

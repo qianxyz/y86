@@ -30,10 +30,15 @@ impl<'a> Parser<'a> {
 
     /// Assert the next token is a register.
     fn assert_register(&mut self) -> Result<Register, SyntaxError> {
-        self.require_token()?.try_into()
+        match self.require_token()? {
+            Token::Reg(r) => Ok(r),
+            _ => Err(SyntaxError),
+        }
     }
 
-    /// Assert the next token is an immediate number.
+    /// Assert the next token is a number.
+    /// Note that a number is different from a constant literal,
+    /// which should always be preceded by `$`.
     fn assert_number(&mut self) -> Result<u64, SyntaxError> {
         match self.require_token()? {
             Token::Number(n) => Ok(n),
@@ -41,10 +46,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Assert the next token is a constant (immediate value or label).
+    /// Assert the following tokens represent a constant,
+    /// i.e. `$<number>` or `<label>`.
     fn assert_constant(&mut self) -> Result<Constant, SyntaxError> {
-        // FIXME: `$` should be required before a number as a constant
-        self.require_token()?.try_into()
+        match self.require_token()? {
+            Token::Dollar => Ok(Constant::Literal(self.assert_number()?)),
+            Token::Label(s) => Ok(Constant::Label(s)),
+            _ => Err(SyntaxError),
+        }
     }
 
     /// Assert the following tokens represent a memory reference,
@@ -52,10 +61,12 @@ impl<'a> Parser<'a> {
     fn assert_memory(&mut self) -> Result<(Constant, Register), SyntaxError> {
         let offset = match self.require_token()? {
             Token::Lparen => Constant::Literal(0),
-            t => {
+            Token::Number(n) => {
                 self.assert_token(Token::Lparen)?;
-                t.try_into()?
+                Constant::Literal(n)
             }
+            // TODO: Should we support label as an offset?
+            _ => return Err(SyntaxError),
         };
         let reg = self.assert_register()?;
         self.assert_token(Token::Rparen)?;
@@ -83,11 +94,7 @@ impl Iterator for Parser<'_> {
                 }
 
                 Token::Iirmovq => {
-                    let value = match self.require_token()? {
-                        Token::Dollar => Constant::Literal(self.assert_number()?),
-                        Token::Label(s) => Constant::Label(s),
-                        _ => return Err(SyntaxError),
-                    };
+                    let value = self.assert_constant()?;
                     self.assert_token(Token::Comma)?;
                     let dest = self.assert_register()?;
                     Statement::Iirmovq { dest, value }
