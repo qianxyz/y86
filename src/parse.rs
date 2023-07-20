@@ -82,6 +82,18 @@ impl Iterator for Parser<'_> {
         let r = self.tokens.next()?;
 
         let result = (|| {
+            macro_rules! directive {
+                ($ident:ident, $type:ty) => {{
+                    let n = self.assert_number()?;
+                    Statement::$ident(n as $type)
+                }};
+                ($ident:ident) => {{
+                    let n = self.assert_number()?;
+                    Statement::$ident(n)
+                }};
+            }
+            // TODO: Macros are cool, let's use more
+
             let stmt = match r? {
                 Token::Ihalt => Statement::Ihalt,
                 Token::Inop => Statement::Inop,
@@ -153,30 +165,12 @@ impl Iterator for Parser<'_> {
                     Statement::LabelDef(s)
                 }
 
-                Token::Dbyte => {
-                    let n = self.assert_number()?;
-                    Statement::Dbyte(n as u8)
-                }
-                Token::Dword => {
-                    let n = self.assert_number()?;
-                    Statement::Dword(n as u16)
-                }
-                Token::Dlong => {
-                    let n = self.assert_number()?;
-                    Statement::Dlong(n as u32)
-                }
-                Token::Dquad => {
-                    let n = self.assert_number()?;
-                    Statement::Dquad(n)
-                }
-                Token::Dpos => {
-                    let n = self.assert_number()?;
-                    Statement::Dpos(n)
-                }
-                Token::Dalign => {
-                    let n = self.assert_number()?;
-                    Statement::Dalign(n)
-                }
+                Token::Dbyte => directive!(Dbyte, u8),
+                Token::Dword => directive!(Dword, u16),
+                Token::Dlong => directive!(Dlong, u32),
+                Token::Dquad => directive!(Dquad),
+                Token::Dpos => directive!(Dpos),
+                Token::Dalign => directive!(Dalign),
 
                 _ => return Err(SyntaxError),
             };
