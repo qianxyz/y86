@@ -1,24 +1,5 @@
 use crate::lex::Token;
 
-#[derive(Debug, PartialEq, Eq)]
-enum Register {
-    Rax,
-    Rcx,
-    Rdx,
-    Rbx,
-    Rsp,
-    Rbp,
-    Rsi,
-    Rdi,
-    R8,
-    R9,
-    R10,
-    R11,
-    R12,
-    R13,
-    R14,
-}
-
 impl From<Token> for Register {
     fn from(value: Token) -> Self {
         match value {
