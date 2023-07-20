@@ -83,27 +83,26 @@ impl Iterator for Parser<'_> {
 
         let result = (|| {
             macro_rules! directive {
-                ($ident:ident, $type:ty) => {{
+                ($ident:ident $(, $type:ty)?) => {{
                     let n = self.assert_number()?;
-                    Statement::$ident(n as $type)
-                }};
-                ($ident:ident) => {{
-                    let n = self.assert_number()?;
-                    Statement::$ident(n)
+                    Statement::$ident(n $(as $type)?)
                 }};
             }
-            // TODO: Macros are cool, let's use more
+
+            macro_rules! binop {
+                ($ident:ident $(, $extra:ident)?) => {{
+                    let src = self.assert_register()?;
+                    self.assert_token(Token::Comma)?;
+                    let dest = self.assert_register()?;
+                    Statement::$ident { $($extra,)? src, dest }
+                }};
+            }
 
             let stmt = match r? {
                 Token::Ihalt => Statement::Ihalt,
                 Token::Inop => Statement::Inop,
 
-                Token::Irrmovq => {
-                    let src = self.assert_register()?;
-                    self.assert_token(Token::Comma)?;
-                    let dest = self.assert_register()?;
-                    Statement::Irrmovq { src, dest }
-                }
+                Token::Irrmovq => binop!(Irrmovq),
 
                 Token::Iirmovq => {
                     let value = self.assert_constant()?;
@@ -126,24 +125,14 @@ impl Iterator for Parser<'_> {
                     Statement::Imrmovq { src, dest, offset }
                 }
 
-                Token::Iopq(op) => {
-                    let src = self.assert_register()?;
-                    self.assert_token(Token::Comma)?;
-                    let dest = self.assert_register()?;
-                    Statement::Iopq { op, src, dest }
-                }
+                Token::Iopq(op) => binop!(Iopq, op),
 
                 Token::Ij(cond) => {
                     let target = self.assert_constant()?;
                     Statement::Ij { cond, target }
                 }
 
-                Token::Icmov(cond) => {
-                    let src = self.assert_register()?;
-                    self.assert_token(Token::Comma)?;
-                    let dest = self.assert_register()?;
-                    Statement::Icmov { cond, src, dest }
-                }
+                Token::Icmov(cond) => binop!(Icmov, cond),
 
                 Token::Icall => {
                     let target = self.assert_constant()?;
