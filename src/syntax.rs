@@ -38,57 +38,29 @@ pub(crate) enum Cond {
     G,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Token {
-    // Instruction mnemonics
-    Ihalt,
-    Inop,
-    Irrmovq,
-    Iirmovq,
-    Irmmovq,
-    Imrmovq,
-    Iopq(Op),
-    Ij(Cond),
-    Icmov(Cond),
-    Icall,
-    Iret,
-    Ipushq,
-    Ipopq,
-
-    Reg(Register),
-
-    Number(u64),
-
-    Label(String),
-
-    // Directives
-    Dbyte,
-    Dword,
-    Dlong,
-    Dquad,
-    Dpos,
-    Dalign,
-
-    // Punctuations
-    Colon,
-    Lparen,
-    Rparen,
-    Comma,
-    Dollar,
-}
-
-/// A constant value, which can be a literal (preceded by `$`) or a label.
+/// A constant value, which can be a literal or a label.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Constant {
     Literal(u64),
     Label(String),
 }
 
+/// A memory address for reference. Can be of form:
+///
+/// - Num(Reg)
+/// - (Reg)
+/// - Num
+/// - Ident
+/// - Ident(Reg)
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Memory {
+    pub reg: Option<Register>,
+    pub offset: Constant,
+}
+
+/// A statement, which can be a directive or an instruction.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Statement {
-    // Label definitions
-    LabelDef(String),
-
     // Directives
     Dbyte(u8),
     Dword(u16),
@@ -110,13 +82,11 @@ pub(crate) enum Statement {
     },
     Irmmovq {
         src: Register,
-        dest: Register,
-        offset: Constant,
+        mem: Memory,
     },
     Imrmovq {
-        src: Register,
         dest: Register,
-        offset: Constant,
+        mem: Memory,
     },
     Iopq {
         op: Op,

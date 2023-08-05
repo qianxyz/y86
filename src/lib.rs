@@ -1,4 +1,4 @@
-mod encode;
-mod lex;
+// mod encode;
+// mod lex;
 mod parse;
 mod syntax;
