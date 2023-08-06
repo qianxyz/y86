@@ -262,6 +262,12 @@ fn memory(src: &str) -> Result<Memory, SyntaxError> {
 mod tests {
     use super::*;
 
+    use Cond::*;
+    use Constant::*;
+    use Op::*;
+    use Register::*;
+    use Statement::*;
+
     #[test]
     fn line_components() {
         let labels = [
@@ -300,8 +306,153 @@ mod tests {
         }
     }
 
+    fn test_statement(src: &str, statement: Statement) {
+        assert_eq!(
+            parse_line(src),
+            Ok(Line {
+                label: None,
+                statement: Some(statement),
+                src: src.to_string()
+            })
+        );
+    }
+
     #[test]
-    fn statements() {
-        todo!()
+    fn directives() {
+        let cases = [
+            (".byte 0x4", Dbyte(0x4)),
+            (".word 0x4", Dword(0x4)),
+            (".long 0x4", Dlong(0x4)),
+            (".quad 0x4", Dquad(0x4)),
+            (".pos 0x4", Dpos(0x4)),
+            (".align 0x4", Dalign(0x4)),
+        ];
+
+        for (src, statement) in cases {
+            test_statement(src, statement);
+        }
+    }
+
+    #[test]
+    fn simple_instructions() {
+        #[rustfmt::skip]
+        let cases = [
+            ("halt", Ihalt),
+            ("nop", Inop),
+            ("rrmovq %rax, %rax", Irrmovq { src: Rax, dest: Rax }),
+            ("irmovq $1, %rax", Iirmovq { dest: Rax, value: Literal(1) }),
+            ("irmovq array, %rax", Iirmovq { dest: Rax, value: Label("array".to_string()) }),
+            ("call main", Icall(Label("main".to_string()))),
+            ("call 0x8", Icall(Literal(8))),
+            ("ret", Iret),
+            ("pushq %rax", Ipushq(Rax)),
+            ("popq %rax", Ipopq(Rax)),
+        ];
+
+        for (src, statement) in cases {
+            test_statement(src, statement);
+        }
+    }
+
+    #[test]
+    fn rmmovq_mrmovq() {
+        #[rustfmt::skip]
+        let memories = [
+            ("(%rax)", Memory { reg: Some(Rax), offset: Literal(0) }),
+            ("0x4(%rax)", Memory { reg: Some(Rax), offset: Literal(4) }),
+            ("array(%rax)", Memory { reg: Some(Rax), offset: Label("array".to_string()) }),
+            ("0x4", Memory { reg: None, offset: Literal(4) }),
+            ("array", Memory { reg: None, offset: Label("array".to_string()) }),
+        ];
+
+        for (ms, mem) in memories {
+            test_statement(
+                &format!("rmmovq %rax, {ms}"),
+                Irmmovq {
+                    src: Rax,
+                    mem: mem.clone(),
+                },
+            );
+            test_statement(
+                &format!("mrmovq {ms}, %rax"),
+                Imrmovq {
+                    dest: Rax,
+                    mem: mem.clone(),
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn opq() {
+        let cases = [
+            ("addq %rax, %rax", Add),
+            ("subq %rax, %rax", Sub),
+            ("andq %rax, %rax", And),
+            ("xorq %rax, %rax", Xor),
+        ];
+
+        for (src, op) in cases {
+            test_statement(
+                src,
+                Iopq {
+                    op,
+                    src: Rax,
+                    dest: Rax,
+                },
+            )
+        }
+    }
+
+    #[test]
+    fn jxx() {
+        let conds = [
+            ("jmp", Always),
+            ("jle", Le),
+            ("jl", L),
+            ("je", E),
+            ("jne", Ne),
+            ("jge", Ge),
+            ("jg", G),
+        ];
+        let dest = [
+            ("0x1234abcd", Literal(0x1234abcd)),
+            ("main", Label("main".to_string())),
+        ];
+
+        for (cs, cond) in conds.iter() {
+            for (ds, target) in dest.iter() {
+                test_statement(
+                    &format!("{cs} {ds}"),
+                    Ij {
+                        cond: cond.clone(),
+                        target: target.clone(),
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cmovxx() {
+        let cases = [
+            ("cmovle %rax, %rax", Le),
+            ("cmovl %rax, %rax", L),
+            ("cmove %rax, %rax", E),
+            ("cmovne %rax, %rax", Ne),
+            ("cmovge %rax, %rax", Ge),
+            ("cmovg %rax, %rax", G),
+        ];
+
+        for (src, cond) in cases {
+            test_statement(
+                src,
+                Icmov {
+                    cond,
+                    src: Rax,
+                    dest: Rax,
+                },
+            )
+        }
     }
 }
