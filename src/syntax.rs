@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum Register {
     Rax,
     Rcx,
@@ -18,7 +18,7 @@ pub(crate) enum Register {
 }
 
 /// Operator variants for `OPq` instructions.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum Op {
     Add,
     Sub,
@@ -27,7 +27,7 @@ pub(crate) enum Op {
 }
 
 /// Condition variants for `jXX` and `cmovXX` instructions.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum Cond {
     Always,
     Le,
@@ -39,7 +39,7 @@ pub(crate) enum Cond {
 }
 
 /// A constant value, which can be a literal or a label.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum Constant {
     Literal(u64),
     Label(String),
@@ -52,14 +52,14 @@ pub(crate) enum Constant {
 /// - Num
 /// - Ident
 /// - Ident(Reg)
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct Memory {
     pub reg: Option<Register>,
     pub offset: Constant,
 }
 
 /// A statement, which can be a directive or an instruction.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) enum Statement {
     // Directives
     Dbyte(u8),
@@ -108,5 +108,5 @@ pub(crate) enum Statement {
     Ipopq(Register),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct SyntaxError; // TODO: Context

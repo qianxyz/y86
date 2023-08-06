@@ -3,7 +3,7 @@ use crate::syntax::*;
 use regex::Regex;
 
 /// A line in assembly code, with its components parsed.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 struct Line {
     /// The optional label leading the line, e.g. `loop: `.
     label: Option<String>,
@@ -22,7 +22,7 @@ fn parse_line(src: &str) -> Result<Line, SyntaxError> {
     // split optional label and the rest of the line
     let (label, rest) = if let Some((l, s)) = s.split_once(':') {
         // strip whitespaces and validate label
-        (Some(validate_label(l.trim())?.to_owned()), s)
+        (Some(validate_label(l.trim())?.to_string()), s)
     } else {
         (None, s)
     };
@@ -86,6 +86,38 @@ fn parse_statement(src: &str) -> Result<Statement, SyntaxError> {
         }};
     }
 
+    macro_rules! op {
+        ($op:ident) => {{
+            let (src, dest) = parse_args!(register, register);
+            Statement::Iopq {
+                op: Op::$op,
+                src,
+                dest,
+            }
+        }};
+    }
+
+    macro_rules! j {
+        ($cond:ident) => {{
+            let target = parse_args!(constant);
+            Statement::Ij {
+                cond: Cond::$cond,
+                target,
+            }
+        }};
+    }
+
+    macro_rules! cmov {
+        ($cond:ident) => {{
+            let (src, dest) = parse_args!(register, register);
+            Statement::Icmov {
+                cond: Cond::$cond,
+                src,
+                dest,
+            }
+        }};
+    }
+
     let statement = match command {
         ".byte" => directive!(Dbyte),
         ".word" => directive!(Dword),
@@ -114,46 +146,25 @@ fn parse_statement(src: &str) -> Result<Statement, SyntaxError> {
             Statement::Imrmovq { dest, mem }
         }
 
-        "addq" | "subq" | "andq" | "xorq" => {
-            let op = match command {
-                "addq" => Op::Add,
-                "subq" => Op::Sub,
-                "andq" => Op::And,
-                "xorq" => Op::Xor,
-                _ => unreachable!(),
-            };
-            let (src, dest) = parse_args!(register, register);
-            Statement::Iopq { op, src, dest }
-        }
+        "addq" => op!(Add),
+        "subq" => op!(Sub),
+        "andq" => op!(And),
+        "xorq" => op!(Xor),
 
-        "jmp" | "jle" | "jl" | "je" | "jne" | "jge" | "jg" => {
-            let cond = match command {
-                "jmp" => Cond::Always,
-                "jle" => Cond::Le,
-                "jl" => Cond::L,
-                "je" => Cond::E,
-                "jne" => Cond::Ne,
-                "jge" => Cond::Ge,
-                "jg" => Cond::G,
-                _ => unreachable!(),
-            };
-            let target = parse_args!(constant);
-            Statement::Ij { cond, target }
-        }
+        "jmp" => j!(Always),
+        "jle" => j!(Le),
+        "jl" => j!(L),
+        "je" => j!(E),
+        "jne" => j!(Ne),
+        "jge" => j!(Ge),
+        "jg" => j!(G),
 
-        "cmovle" | "cmovl" | "cmove" | "cmovne" | "cmovge" | "cmovg" => {
-            let cond = match command {
-                "cmovle" => Cond::Le,
-                "cmovl" => Cond::L,
-                "cmove" => Cond::E,
-                "cmovne" => Cond::Ne,
-                "cmovge" => Cond::Ge,
-                "cmovg" => Cond::G,
-                _ => unreachable!(),
-            };
-            let (src, dest) = parse_args!(register, register);
-            Statement::Icmov { cond, src, dest }
-        }
+        "cmovle" => cmov!(Le),
+        "cmovl" => cmov!(L),
+        "cmove" => cmov!(E),
+        "cmovne" => cmov!(Ne),
+        "cmovge" => cmov!(Ge),
+        "cmovg" => cmov!(G),
 
         "call" => {
             let c = parse_args!(constant);
@@ -194,7 +205,7 @@ fn constant(src: &str) -> Result<Constant, SyntaxError> {
     if src.starts_with(|c: char| c == '$' || c.is_ascii_digit()) {
         number(src).map(|n| Constant::Literal(n))
     } else {
-        Ok(Constant::Label(validate_label(src)?.to_owned()))
+        Ok(Constant::Label(validate_label(src)?.to_string()))
     }
 }
 
@@ -250,4 +261,47 @@ fn memory(src: &str) -> Result<Memory, SyntaxError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_components() {
+        let labels = [
+            ("", None),
+            ("main:", Some("main".to_string())),
+            ("    main:", Some("main".to_string())),
+            ("    main    :", Some("main".to_string())),
+        ];
+        let statements = [
+            ("", None),
+            ("nop", Some(Statement::Inop)),
+            ("    nop", Some(Statement::Inop)),
+            ("    nop    ", Some(Statement::Inop)),
+        ];
+        let comments = [
+            "# comment",
+            "    # comment",
+            "    # comment:",
+            "    ## comment",
+        ];
+
+        for (ls, label) in labels.iter() {
+            for (ss, statement) in statements.iter() {
+                for comment in comments.iter() {
+                    let src = format!("{ls}{ss}{comment}");
+                    assert_eq!(
+                        parse_line(&src),
+                        Ok(Line {
+                            label: label.clone(),
+                            statement: statement.clone(),
+                            src: src.to_string()
+                        })
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn statements() {
+        todo!()
+    }
 }
