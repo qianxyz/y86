@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum Register {
     Rax,
     Rcx,
@@ -18,7 +18,7 @@ pub(crate) enum Register {
 }
 
 /// Operator variants for `OPq` instructions.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum Op {
     Add,
     Sub,
@@ -27,7 +27,7 @@ pub(crate) enum Op {
 }
 
 /// Condition variants for `jXX` and `cmovXX` instructions.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum Cond {
     Always,
     Le,
@@ -39,10 +39,10 @@ pub(crate) enum Cond {
 }
 
 /// A constant value, which can be a literal or a label.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) enum Constant {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum Constant<'a> {
     Literal(u64),
-    Label(String),
+    Label(&'a str),
 }
 
 /// A memory address for reference. Can be of form:
@@ -52,15 +52,15 @@ pub(crate) enum Constant {
 /// - Num
 /// - Ident
 /// - Ident(Reg)
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct Memory {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) struct Memory<'a> {
     pub reg: Option<Register>,
-    pub offset: Constant,
+    pub offset: Constant<'a>,
 }
 
 /// A statement, which can be a directive or an instruction.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) enum Statement {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum Statement<'a> {
     // Directives
     Dbyte(u8),
     Dword(u16),
@@ -78,15 +78,15 @@ pub(crate) enum Statement {
     },
     Iirmovq {
         dest: Register,
-        value: Constant,
+        value: Constant<'a>,
     },
     Irmmovq {
         src: Register,
-        mem: Memory,
+        mem: Memory<'a>,
     },
     Imrmovq {
         dest: Register,
-        mem: Memory,
+        mem: Memory<'a>,
     },
     Iopq {
         op: Op,
@@ -95,18 +95,18 @@ pub(crate) enum Statement {
     },
     Ij {
         cond: Cond,
-        target: Constant,
+        target: Constant<'a>,
     },
     Icmov {
         cond: Cond,
         src: Register,
         dest: Register,
     },
-    Icall(Constant),
+    Icall(Constant<'a>),
     Iret,
     Ipushq(Register),
     Ipopq(Register),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct SyntaxError; // TODO: Context

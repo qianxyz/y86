@@ -3,16 +3,16 @@ use crate::syntax::*;
 use regex::Regex;
 
 /// A line in assembly code, with its components parsed.
-#[derive(Debug, PartialEq, Eq, Clone)]
-struct Line {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct Line<'a> {
     /// The optional label leading the line, e.g. `loop: `.
-    label: Option<String>,
+    label: Option<&'a str>,
 
     /// The optional statement (instruction or directive).
-    statement: Option<Statement>,
+    statement: Option<Statement<'a>>,
 
     /// The source code line.
-    src: String,
+    src: &'a str,
 }
 
 fn parse_line(src: &str) -> Result<Line, SyntaxError> {
@@ -22,7 +22,7 @@ fn parse_line(src: &str) -> Result<Line, SyntaxError> {
     // split optional label and the rest of the line
     let (label, rest) = if let Some((l, s)) = s.split_once(':') {
         // strip whitespaces and validate label
-        (Some(validate_label(l.trim())?.to_string()), s)
+        (Some(validate_label(l.trim())?), s)
     } else {
         (None, s)
     };
@@ -38,7 +38,7 @@ fn parse_line(src: &str) -> Result<Line, SyntaxError> {
     Ok(Line {
         label,
         statement,
-        src: src.to_string(),
+        src,
     })
 }
 
@@ -205,7 +205,7 @@ fn constant(src: &str) -> Result<Constant, SyntaxError> {
     if src.starts_with(|c: char| c == '$' || c.is_ascii_digit()) {
         number(src).map(|n| Constant::Literal(n))
     } else {
-        Ok(Constant::Label(validate_label(src)?.to_string()))
+        Ok(Constant::Label(validate_label(src)?))
     }
 }
 
@@ -237,7 +237,11 @@ fn register(src: &str) -> Result<Register, SyntaxError> {
 fn memory(src: &str) -> Result<Memory, SyntaxError> {
     let re = Regex::new(r"^(.*)\((.*)\)$").unwrap();
     let mem = if let Some(caps) = re.captures(src) {
-        let offset = caps[1].trim();
+        // The difference between `caps.get(1).unwrap().as_str()` and
+        // `&caps[1]` is that the lifetime of the former is associated with
+        // the haystack `src` while that of the latter with `caps` due to how
+        // the `Index` trait is defined.
+        let offset = caps.get(1).unwrap().as_str().trim();
         let reg = caps[2].trim();
 
         let offset = if offset.is_empty() {
@@ -272,9 +276,9 @@ mod tests {
     fn line_components() {
         let labels = [
             ("", None),
-            ("main:", Some("main".to_string())),
-            ("    main:", Some("main".to_string())),
-            ("    main    :", Some("main".to_string())),
+            ("main:", Some("main")),
+            ("    main:", Some("main")),
+            ("    main    :", Some("main")),
         ];
         let statements = [
             ("", None),
@@ -289,16 +293,16 @@ mod tests {
             "    ## comment",
         ];
 
-        for (ls, label) in labels.iter() {
-            for (ss, statement) in statements.iter() {
+        for (ls, label) in labels {
+            for (ss, statement) in statements {
                 for comment in comments.iter() {
-                    let src = format!("{ls}{ss}{comment}");
+                    let src = &format!("{ls}{ss}{comment}");
                     assert_eq!(
                         parse_line(&src),
                         Ok(Line {
-                            label: label.clone(),
-                            statement: statement.clone(),
-                            src: src.to_string()
+                            label,
+                            statement,
+                            src,
                         })
                     );
                 }
@@ -312,7 +316,7 @@ mod tests {
             Ok(Line {
                 label: None,
                 statement: Some(statement),
-                src: src.to_string()
+                src,
             })
         );
     }
@@ -341,8 +345,8 @@ mod tests {
             ("nop", Inop),
             ("rrmovq %rax, %rax", Irrmovq { src: Rax, dest: Rax }),
             ("irmovq $1, %rax", Iirmovq { dest: Rax, value: Literal(1) }),
-            ("irmovq array, %rax", Iirmovq { dest: Rax, value: Label("array".to_string()) }),
-            ("call main", Icall(Label("main".to_string()))),
+            ("irmovq array, %rax", Iirmovq { dest: Rax, value: Label("array") }),
+            ("call main", Icall(Label("main"))),
             ("call 0x8", Icall(Literal(8))),
             ("ret", Iret),
             ("pushq %rax", Ipushq(Rax)),
@@ -360,26 +364,14 @@ mod tests {
         let memories = [
             ("(%rax)", Memory { reg: Some(Rax), offset: Literal(0) }),
             ("0x4(%rax)", Memory { reg: Some(Rax), offset: Literal(4) }),
-            ("array(%rax)", Memory { reg: Some(Rax), offset: Label("array".to_string()) }),
+            ("array(%rax)", Memory { reg: Some(Rax), offset: Label("array") }),
             ("0x4", Memory { reg: None, offset: Literal(4) }),
-            ("array", Memory { reg: None, offset: Label("array".to_string()) }),
+            ("array", Memory { reg: None, offset: Label("array") }),
         ];
 
         for (ms, mem) in memories {
-            test_statement(
-                &format!("rmmovq %rax, {ms}"),
-                Irmmovq {
-                    src: Rax,
-                    mem: mem.clone(),
-                },
-            );
-            test_statement(
-                &format!("mrmovq {ms}, %rax"),
-                Imrmovq {
-                    dest: Rax,
-                    mem: mem.clone(),
-                },
-            );
+            test_statement(&format!("rmmovq %rax, {ms}"), Irmmovq { src: Rax, mem });
+            test_statement(&format!("mrmovq {ms}, %rax"), Imrmovq { dest: Rax, mem });
         }
     }
 
@@ -415,20 +407,11 @@ mod tests {
             ("jge", Ge),
             ("jg", G),
         ];
-        let dest = [
-            ("0x1234abcd", Literal(0x1234abcd)),
-            ("main", Label("main".to_string())),
-        ];
+        let dest = [("0x1234abcd", Literal(0x1234abcd)), ("main", Label("main"))];
 
-        for (cs, cond) in conds.iter() {
-            for (ds, target) in dest.iter() {
-                test_statement(
-                    &format!("{cs} {ds}"),
-                    Ij {
-                        cond: cond.clone(),
-                        target: target.clone(),
-                    },
-                );
+        for (cs, cond) in conds {
+            for (ds, target) in dest {
+                test_statement(&format!("{cs} {ds}"), Ij { cond, target });
             }
         }
     }
