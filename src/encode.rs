@@ -3,41 +3,38 @@ use std::collections::HashMap;
 use crate::parse::ParsedLine;
 use crate::syntax::*;
 
-/// A line encoded into bytecode.
-struct EncodedLine<'a> {
+/// The encoded record of a line.
+struct EncodedLine {
     /// The address of the line, `None` when it has no label or statement.
     address: Option<u64>,
 
     /// The byte encoding of the line.
     bytecode: Vec<u8>,
-
-    /// The assembly source code.
-    src: &'a str,
 }
 
 struct EncodeError; // TODO: Context
 
 fn encode(lines: Vec<ParsedLine>) -> Result<Vec<EncodedLine>, EncodeError> {
     // The first pass: Calculate the addresses for the lines
-    let (addrs, labels) = calculate_address(lines)?;
+    let (addrs, labels) = calculate_address(&lines)?;
 
     // The second pass: Encode the instructions line by line
-    addrs
+    lines
         .into_iter()
-        .map(|(addr, line)| encode_line(line, addr, &labels))
+        .zip(addrs)
+        .map(|(line, addr)| encode_line(line, addr, &labels))
         .collect()
 }
-
-/// A parsed line with its address.
-type AddrLine<'a> = (u64, ParsedLine<'a>);
 
 /// A hashmap from label strings to addresses.
 type LabelAddrs<'a> = HashMap<&'a str, u64>;
 
-/// Calculate the addresses from a vector of parsed lines.
-/// Return an associative array of addresses and lines,
+/// Calculate the addresses from an array of parsed lines.
+/// Return an array of addresses of the same length as the input,
 /// and a hashmap for the addresses of labels.
-fn calculate_address(lines: Vec<ParsedLine>) -> Result<(Vec<AddrLine>, LabelAddrs), EncodeError> {
+fn calculate_address<'a>(
+    lines: &[ParsedLine<'a>],
+) -> Result<(Vec<u64>, LabelAddrs<'a>), EncodeError> {
     let mut addrs = Vec::new();
     let mut labels = LabelAddrs::new();
 
@@ -45,7 +42,7 @@ fn calculate_address(lines: Vec<ParsedLine>) -> Result<(Vec<AddrLine>, LabelAddr
 
     for line in lines {
         // add the address for the line
-        addrs.push((pc, line));
+        addrs.push(pc);
 
         // register the label
         if let Some(label) = line.label {
@@ -90,17 +87,26 @@ fn calculate_address(lines: Vec<ParsedLine>) -> Result<(Vec<AddrLine>, LabelAddr
     Ok((addrs, labels))
 }
 
-fn encode_line<'a>(
-    line: ParsedLine<'a>,
+fn encode_line(
+    line: ParsedLine,
     addr: u64,
     labels: &LabelAddrs,
-) -> Result<EncodedLine<'a>, EncodeError> {
+) -> Result<EncodedLine, EncodeError> {
     let address = if line.label.is_some() || line.statement.is_some() {
         Some(addr)
     } else {
         None
     };
 
+    let bytecode = match line.statement {
+        Some(s) => encode_statement(s, labels)?,
+        None => Vec::new(),
+    };
+
+    Ok(EncodedLine { address, bytecode })
+}
+
+fn encode_statement(statement: Statement, labels: &LabelAddrs) -> Result<Vec<u8>, EncodeError> {
     macro_rules! bytecode {
         () => { Vec::new() };
         ( $( $x:expr ),* ) => {{
@@ -110,57 +116,49 @@ fn encode_line<'a>(
         }};
     }
 
-    let bytecode = if let Some(statement) = line.statement {
-        use Statement::*;
+    use Statement::*;
 
-        match statement {
-            Dbyte(n) => bytecode!(n),
-            Dword(n) => bytecode!(n),
-            Dlong(n) => bytecode!(n),
-            Dquad(n) => bytecode!(n),
-            Dpos(_) | Dalign(_) => bytecode!(),
+    let bytecode = match statement {
+        Dbyte(n) => bytecode!(n),
+        Dword(n) => bytecode!(n),
+        Dlong(n) => bytecode!(n),
+        Dquad(n) => bytecode!(n),
+        Dpos(_) | Dalign(_) => bytecode!(),
 
-            Ihalt => bytecode!(0x00_u8),
-            Inop => bytecode!(0x10_u8),
+        Ihalt => bytecode!(0x00_u8),
+        Inop => bytecode!(0x10_u8),
 
-            Irrmovq { src, dest } => bytecode!(0x20_u8, (src as u8) << 4 | dest as u8),
-            Iirmovq { dest, value } => bytecode!(
-                0x30_u8,
-                0xf << 4 | dest as u8,
-                resolve_constant(value, labels)?
-            ),
-            Irmmovq { src, mem } => {
-                let (reg, offset) = resolve_memory(mem, labels)?;
-                bytecode!(0x40_u8, (src as u8) << 4 | reg, offset)
-            }
-            Imrmovq { dest, mem } => {
-                let (reg, offset) = resolve_memory(mem, labels)?;
-                bytecode!(0x50_u8, (dest as u8) << 4 | reg, offset)
-            }
-
-            Iopq { op, src, dest } => bytecode!(0x60 | op as u8, (src as u8) << 4 | dest as u8),
-
-            Ij { cond, target } => bytecode!(0x70 | cond as u8, resolve_constant(target, labels)?),
-
-            Icmov { cond, src, dest } => {
-                bytecode!(0x20 | cond as u8, (src as u8) << 4 | dest as u8)
-            }
-
-            Icall(target) => bytecode!(0x80_u8, resolve_constant(target, labels)?),
-            Iret => bytecode!(0x90_u8),
-
-            Ipushq(reg) => bytecode!(0xa0_u8, (reg as u8) << 4 | 0xf),
-            Ipopq(reg) => bytecode!(0xb0_u8, (reg as u8) << 4 | 0xf),
+        Irrmovq { src, dest } => bytecode!(0x20_u8, (src as u8) << 4 | dest as u8),
+        Iirmovq { dest, value } => bytecode!(
+            0x30_u8,
+            0xf << 4 | dest as u8,
+            resolve_constant(value, labels)?
+        ),
+        Irmmovq { src, mem } => {
+            let (reg, offset) = resolve_memory(mem, labels)?;
+            bytecode!(0x40_u8, (src as u8) << 4 | reg, offset)
         }
-    } else {
-        bytecode!()
+        Imrmovq { dest, mem } => {
+            let (reg, offset) = resolve_memory(mem, labels)?;
+            bytecode!(0x50_u8, (dest as u8) << 4 | reg, offset)
+        }
+
+        Iopq { op, src, dest } => bytecode!(0x60 | op as u8, (src as u8) << 4 | dest as u8),
+
+        Ij { cond, target } => bytecode!(0x70 | cond as u8, resolve_constant(target, labels)?),
+
+        Icmov { cond, src, dest } => {
+            bytecode!(0x20 | cond as u8, (src as u8) << 4 | dest as u8)
+        }
+
+        Icall(target) => bytecode!(0x80_u8, resolve_constant(target, labels)?),
+        Iret => bytecode!(0x90_u8),
+
+        Ipushq(reg) => bytecode!(0xa0_u8, (reg as u8) << 4 | 0xf),
+        Ipopq(reg) => bytecode!(0xb0_u8, (reg as u8) << 4 | 0xf),
     };
 
-    Ok(EncodedLine {
-        address,
-        bytecode,
-        src: line.src,
-    })
+    Ok(bytecode)
 }
 
 fn resolve_constant(c: Constant, labels: &LabelAddrs) -> Result<u64, EncodeError> {

@@ -2,7 +2,7 @@ use crate::syntax::*;
 
 use regex::Regex;
 
-/// A line in assembly code, with its components parsed.
+/// The semantic components of a line of assembly code.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct ParsedLine<'a> {
     /// The optional label leading the line, e.g. `loop: `.
@@ -10,9 +10,6 @@ pub(crate) struct ParsedLine<'a> {
 
     /// The optional statement (instruction or directive).
     pub statement: Option<Statement<'a>>,
-
-    /// The source code line.
-    pub src: &'a str,
 }
 
 fn parse_line(src: &str) -> Result<ParsedLine, SyntaxError> {
@@ -35,11 +32,7 @@ fn parse_line(src: &str) -> Result<ParsedLine, SyntaxError> {
         Some(parse_statement(rest)?)
     };
 
-    Ok(ParsedLine {
-        label,
-        statement,
-        src,
-    })
+    Ok(ParsedLine { label, statement })
 }
 
 fn validate_label(label: &str) -> Result<&str, SyntaxError> {
@@ -297,14 +290,7 @@ mod tests {
             for (ss, statement) in statements {
                 for comment in comments.iter() {
                     let src = &format!("{ls}{ss}{comment}");
-                    assert_eq!(
-                        parse_line(&src),
-                        Ok(ParsedLine {
-                            label,
-                            statement,
-                            src,
-                        })
-                    );
+                    assert_eq!(parse_line(&src), Ok(ParsedLine { label, statement }));
                 }
             }
         }
@@ -316,7 +302,6 @@ mod tests {
             Ok(ParsedLine {
                 label: None,
                 statement: Some(statement),
-                src,
             })
         );
     }
