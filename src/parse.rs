@@ -203,7 +203,7 @@ fn number(src: &str) -> Result<u64, SyntaxError> {
 
 fn constant(src: &str) -> Result<Constant, SyntaxError> {
     if src.starts_with(|c: char| c == '$' || c.is_ascii_digit()) {
-        number(src).map(|n| Constant::Literal(n))
+        number(src).map(Constant::Literal)
     } else {
         Ok(Constant::Label(validate_label(src)?))
     }

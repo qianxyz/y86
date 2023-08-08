@@ -37,9 +37,7 @@ type LabelAddrs<'a> = HashMap<&'a str, u64>;
 /// Calculate the addresses from a vector of parsed lines.
 /// Return an associative array of addresses and lines,
 /// and a hashmap for the addresses of labels.
-fn calculate_address<'a>(
-    lines: Vec<ParsedLine<'a>>,
-) -> Result<(Vec<AddrLine>, LabelAddrs), EncodeError> {
+fn calculate_address(lines: Vec<ParsedLine>) -> Result<(Vec<AddrLine>, LabelAddrs), EncodeError> {
     let mut addrs = Vec::new();
     let mut labels = LabelAddrs::new();
 
@@ -133,11 +131,11 @@ fn encode_line<'a>(
             ),
             Irmmovq { src, mem } => {
                 let (reg, offset) = resolve_memory(mem, labels)?;
-                bytecode!(0x40_u8, (src as u8) << 4 | reg as u8, offset)
+                bytecode!(0x40_u8, (src as u8) << 4 | reg, offset)
             }
             Imrmovq { dest, mem } => {
                 let (reg, offset) = resolve_memory(mem, labels)?;
-                bytecode!(0x50_u8, (dest as u8) << 4 | reg as u8, offset)
+                bytecode!(0x50_u8, (dest as u8) << 4 | reg, offset)
             }
 
             Iopq { op, src, dest } => bytecode!(0x60 | op as u8, (src as u8) << 4 | dest as u8),
