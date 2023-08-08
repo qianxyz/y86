@@ -1,3 +1,3 @@
-// mod encode;
+mod encode;
 mod parse;
 mod syntax;

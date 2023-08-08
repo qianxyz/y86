@@ -4,18 +4,18 @@ use regex::Regex;
 
 /// A line in assembly code, with its components parsed.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct Line<'a> {
+pub(crate) struct ParsedLine<'a> {
     /// The optional label leading the line, e.g. `loop: `.
-    label: Option<&'a str>,
+    pub label: Option<&'a str>,
 
     /// The optional statement (instruction or directive).
-    statement: Option<Statement<'a>>,
+    pub statement: Option<Statement<'a>>,
 
     /// The source code line.
-    src: &'a str,
+    pub src: &'a str,
 }
 
-fn parse_line(src: &str) -> Result<Line, SyntaxError> {
+fn parse_line(src: &str) -> Result<ParsedLine, SyntaxError> {
     // strip comment after the first `#`
     let s = src.split('#').next().unwrap(); // iterator guaranteed not empty
 
@@ -35,7 +35,7 @@ fn parse_line(src: &str) -> Result<Line, SyntaxError> {
         Some(parse_statement(rest)?)
     };
 
-    Ok(Line {
+    Ok(ParsedLine {
         label,
         statement,
         src,
@@ -299,7 +299,7 @@ mod tests {
                     let src = &format!("{ls}{ss}{comment}");
                     assert_eq!(
                         parse_line(&src),
-                        Ok(Line {
+                        Ok(ParsedLine {
                             label,
                             statement,
                             src,
@@ -313,7 +313,7 @@ mod tests {
     fn test_statement(src: &str, statement: Statement) {
         assert_eq!(
             parse_line(src),
-            Ok(Line {
+            Ok(ParsedLine {
                 label: None,
                 statement: Some(statement),
                 src,
