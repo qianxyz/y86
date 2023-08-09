@@ -4,17 +4,19 @@ use crate::parse::ParsedLine;
 use crate::syntax::*;
 
 /// The encoded record of a line.
+#[derive(Debug, PartialEq, Eq)]
 struct EncodedLine {
-    /// The address of the line, `None` when it has no label or statement.
-    address: Option<u64>,
+    /// The address of the line.
+    address: u64,
 
     /// The byte encoding of the line.
     bytecode: Vec<u8>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct EncodeError; // TODO: Context
 
-fn encode(lines: Vec<ParsedLine>) -> Result<Vec<EncodedLine>, EncodeError> {
+fn encode(lines: &[ParsedLine]) -> Result<Vec<EncodedLine>, EncodeError> {
     // The first pass: Calculate the addresses for the lines
     let (addrs, labels) = calculate_address(&lines)?;
 
@@ -88,16 +90,10 @@ fn calculate_address<'a>(
 }
 
 fn encode_line(
-    line: ParsedLine,
-    addr: u64,
+    line: &ParsedLine,
+    address: u64,
     labels: &LabelAddrs,
 ) -> Result<EncodedLine, EncodeError> {
-    let address = if line.label.is_some() || line.statement.is_some() {
-        Some(addr)
-    } else {
-        None
-    };
-
     let bytecode = match line.statement {
         Some(s) => encode_statement(s, labels)?,
         None => Vec::new(),
@@ -173,4 +169,152 @@ fn resolve_memory(mem: Memory, labels: &LabelAddrs) -> Result<(u8, u64), EncodeE
     let offset = resolve_constant(mem.offset, labels)?;
 
     Ok((reg, offset))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use Cond::*;
+    use Constant::*;
+    use Op::*;
+    use Register::*;
+    use Statement::*;
+
+    fn test_single_statement(statement: Statement, bytecode: Vec<u8>) {
+        let parsed = vec![ParsedLine {
+            label: None,
+            statement: Some(statement),
+        }];
+        assert_eq!(
+            encode(&parsed),
+            Ok(vec![EncodedLine {
+                address: 0,
+                bytecode
+            }]),
+            "{statement:?}"
+        )
+    }
+
+    #[test]
+    fn simple_single() {
+        let cases = [
+            (Dbyte(0x8), vec![0x08]),
+            (Dword(0x8), vec![0x08, 0]),
+            (Dlong(0x8), vec![0x08, 0, 0, 0]),
+            (Dquad(0x8), vec![0x08, 0, 0, 0, 0, 0, 0, 0]),
+            (Ihalt, vec![0x00]),
+            (Inop, vec![0x10]),
+            (
+                Irrmovq {
+                    src: Rax,
+                    dest: Rcx,
+                },
+                vec![0x20, 0x01],
+            ),
+            (
+                Iirmovq {
+                    dest: Rax,
+                    value: Literal(0x8),
+                },
+                vec![0x30, 0xf0, 0x08, 0, 0, 0, 0, 0, 0, 0],
+            ),
+            (Icall(Literal(0x8)), vec![0x80, 0x08, 0, 0, 0, 0, 0, 0, 0]),
+            (Iret, vec![0x90]),
+            (Ipushq(Rax), vec![0xa0, 0x0f]),
+            (Ipopq(Rax), vec![0xb0, 0x0f]),
+        ];
+
+        for (statement, bytecode) in cases {
+            test_single_statement(statement, bytecode);
+        }
+    }
+
+    #[test]
+    fn rmmovq_mrmovq() {
+        let cases = [(Some(Rax), 0x10), (None, 0x1f)];
+        for (reg, byte) in cases {
+            let mem = Memory {
+                reg,
+                offset: Literal(0x8),
+            };
+
+            test_single_statement(
+                Irmmovq { src: Rcx, mem },
+                vec![0x40, byte, 0x08, 0, 0, 0, 0, 0, 0, 0],
+            );
+            test_single_statement(
+                Imrmovq { dest: Rcx, mem },
+                vec![0x50, byte, 0x08, 0, 0, 0, 0, 0, 0, 0],
+            );
+        }
+    }
+
+    #[test]
+    fn opq() {
+        let cases = [(Add, 0x60), (Sub, 0x61), (And, 0x62), (Xor, 0x63)];
+
+        for (op, byte) in cases {
+            test_single_statement(
+                Iopq {
+                    op,
+                    src: Rax,
+                    dest: Rcx,
+                },
+                vec![byte, 0x01],
+            )
+        }
+    }
+
+    #[test]
+    fn jxx() {
+        let cases = [
+            (Always, 0x70),
+            (Le, 0x71),
+            (L, 0x72),
+            (E, 0x73),
+            (Ne, 0x74),
+            (Ge, 0x75),
+            (G, 0x76),
+        ];
+
+        for (cond, byte) in cases {
+            test_single_statement(
+                Ij {
+                    cond,
+                    target: Literal(0x8),
+                },
+                vec![byte, 0x08, 0, 0, 0, 0, 0, 0, 0],
+            )
+        }
+    }
+
+    #[test]
+    fn cmovxx() {
+        let cases = [
+            (Always, 0x20),
+            (Le, 0x21),
+            (L, 0x22),
+            (E, 0x23),
+            (Ne, 0x24),
+            (Ge, 0x25),
+            (G, 0x26),
+        ];
+
+        for (cond, byte) in cases {
+            test_single_statement(
+                Icmov {
+                    cond,
+                    src: Rax,
+                    dest: Rcx,
+                },
+                vec![byte, 0x01],
+            )
+        }
+    }
+
+    #[test]
+    fn address() {
+        todo!()
+    }
 }
