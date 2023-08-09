@@ -5,18 +5,18 @@ use crate::syntax::*;
 
 /// The encoded record of a line.
 #[derive(Debug, PartialEq, Eq)]
-struct EncodedLine {
+pub struct EncodedLine {
     /// The address of the line.
-    address: u64,
+    pub address: u64,
 
     /// The byte encoding of the line.
-    bytecode: Vec<u8>,
+    pub bytecode: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct EncodeError; // TODO: Context
+pub struct EncodeError; // TODO: Context
 
-fn encode(lines: &[ParsedLine]) -> Result<Vec<EncodedLine>, EncodeError> {
+pub fn encode(lines: &[ParsedLine]) -> Result<Vec<EncodedLine>, EncodeError> {
     // The first pass: Calculate the addresses for the lines
     let (addrs, labels) = calculate_address(&lines)?;
 

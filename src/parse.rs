@@ -4,7 +4,7 @@ use regex::Regex;
 
 /// The semantic components of a line of assembly code.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) struct ParsedLine<'a> {
+pub struct ParsedLine<'a> {
     /// The optional label leading the line, e.g. `loop: `.
     pub label: Option<&'a str>,
 
@@ -12,7 +12,10 @@ pub(crate) struct ParsedLine<'a> {
     pub statement: Option<Statement<'a>>,
 }
 
-fn parse_line(src: &str) -> Result<ParsedLine, SyntaxError> {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct SyntaxError; // TODO: Context
+
+pub fn parse_line(src: &str) -> Result<ParsedLine, SyntaxError> {
     // strip comment after the first `#`
     let s = src.split('#').next().unwrap(); // iterator guaranteed not empty
 
