@@ -43,9 +43,6 @@ fn calculate_address<'a>(
     let mut pc = 0;
 
     for line in lines {
-        // add the address for the line
-        addrs.push(pc);
-
         // register the label
         if let Some(label) = line.label {
             // errs if the label is already defined
@@ -54,6 +51,24 @@ fn calculate_address<'a>(
             }
             labels.insert(label, pc);
         }
+
+        // `.pos` and `.align` should take effect immediately
+        if let Some(Statement::Dpos(n)) = line.statement {
+            if pc > n {
+                return Err(EncodeError);
+            } else {
+                pc = n;
+            }
+        }
+        if let Some(Statement::Dalign(width)) = line.statement {
+            let rem = pc % width;
+            if rem != 0 {
+                pc += width - rem;
+            }
+        }
+
+        // add the address for the line
+        addrs.push(pc);
 
         if let Some(statement) = line.statement {
             use Statement::*;
@@ -64,19 +79,7 @@ fn calculate_address<'a>(
                 Dword(_) => pc += 2,
                 Dlong(_) => pc += 4,
                 Dquad(_) => pc += 8,
-                Dpos(n) => {
-                    if pc > n {
-                        return Err(EncodeError);
-                    } else {
-                        pc = n;
-                    }
-                }
-                Dalign(width) => {
-                    let rem = pc % width;
-                    if rem != 0 {
-                        pc += width - rem;
-                    }
-                }
+                Dpos(_) | Dalign(_) => (),
 
                 Ihalt | Inop | Iret => pc += 1,
                 Irrmovq { .. } | Iopq { .. } | Icmov { .. } | Ipushq(_) | Ipopq(_) => pc += 2,
@@ -327,7 +330,39 @@ mod tests {
     }
 
     #[test]
-    fn address() {
-        todo!()
+    fn pos_align() {
+        let cases = [
+            (0x0, 0x4, 0x0),
+            (0x2, 0x4, 0x4),
+            (0x4, 0x4, 0x4),
+            (0x6, 0x4, 0x8),
+            (0x8, 0x4, 0x8),
+        ];
+
+        for (pos, width, address) in cases {
+            let parsed = vec![
+                ParsedLine {
+                    label: None,
+                    statement: Some(Dpos(pos)),
+                },
+                ParsedLine {
+                    label: None,
+                    statement: Some(Dalign(width)),
+                },
+            ];
+            assert_eq!(
+                encode(&parsed),
+                Ok(vec![
+                    EncodedLine {
+                        address: pos,
+                        bytecode: vec![]
+                    },
+                    EncodedLine {
+                        address,
+                        bytecode: vec![]
+                    }
+                ])
+            );
+        }
     }
 }
