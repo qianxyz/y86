@@ -1,5 +1,5 @@
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Register {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Register {
     Rax,
     Rcx,
     Rdx,
@@ -18,8 +18,8 @@ pub(crate) enum Register {
 }
 
 /// Operator variants for `OPq` instructions.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Op {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Op {
     Add,
     Sub,
     And,
@@ -27,8 +27,8 @@ pub(crate) enum Op {
 }
 
 /// Condition variants for `jXX` and `cmovXX` instructions.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Cond {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Cond {
     Always,
     Le,
     L,
@@ -38,57 +38,29 @@ pub(crate) enum Cond {
     G,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Token {
-    // Instruction mnemonics
-    Ihalt,
-    Inop,
-    Irrmovq,
-    Iirmovq,
-    Irmmovq,
-    Imrmovq,
-    Iopq(Op),
-    Ij(Cond),
-    Icmov(Cond),
-    Icall,
-    Iret,
-    Ipushq,
-    Ipopq,
-
-    Reg(Register),
-
-    Number(u64),
-
-    Label(String),
-
-    // Directives
-    Dbyte,
-    Dword,
-    Dlong,
-    Dquad,
-    Dpos,
-    Dalign,
-
-    // Punctuations
-    Colon,
-    Lparen,
-    Rparen,
-    Comma,
-    Dollar,
-}
-
-/// A constant value, which can be a literal (preceded by `$`) or a label.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Constant {
+/// A constant value, which can be a literal or a label.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Constant<'a> {
     Literal(u64),
-    Label(String),
+    Label(&'a str),
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Statement {
-    // Label definitions
-    LabelDef(String),
+/// A memory address for reference. Can be of form:
+///
+/// - Num(Reg)
+/// - (Reg)
+/// - Num
+/// - Ident
+/// - Ident(Reg)
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Memory<'a> {
+    pub reg: Option<Register>,
+    pub offset: Constant<'a>,
+}
 
+/// A statement, which can be a directive or an instruction.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Statement<'a> {
     // Directives
     Dbyte(u8),
     Dword(u16),
@@ -106,17 +78,15 @@ pub(crate) enum Statement {
     },
     Iirmovq {
         dest: Register,
-        value: Constant,
+        value: Constant<'a>,
     },
     Irmmovq {
         src: Register,
-        dest: Register,
-        offset: Constant,
+        mem: Memory<'a>,
     },
     Imrmovq {
-        src: Register,
         dest: Register,
-        offset: Constant,
+        mem: Memory<'a>,
     },
     Iopq {
         op: Op,
@@ -125,18 +95,15 @@ pub(crate) enum Statement {
     },
     Ij {
         cond: Cond,
-        target: Constant,
+        target: Constant<'a>,
     },
     Icmov {
         cond: Cond,
         src: Register,
         dest: Register,
     },
-    Icall(Constant),
+    Icall(Constant<'a>),
     Iret,
     Ipushq(Register),
     Ipopq(Register),
 }
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct SyntaxError; // TODO: Context

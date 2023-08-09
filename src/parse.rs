@@ -1,179 +1,267 @@
-use crate::{lex::*, syntax::*};
+use crate::syntax::*;
 
-struct Parser<'a> {
-    tokens: Lexer<'a>,
+use regex::Regex;
+
+/// The semantic components of a line of assembly code.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct ParsedLine<'a> {
+    /// The optional label leading the line, e.g. `loop: `.
+    pub label: Option<&'a str>,
+
+    /// The optional statement (instruction or directive).
+    pub statement: Option<Statement<'a>>,
 }
 
-impl<'a> Parser<'a> {
-    fn new(src: &'a str) -> Self {
-        Self {
-            tokens: Lexer::new(src),
-        }
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct SyntaxError; // TODO: Context
+
+pub fn parse_line(src: &str) -> Result<ParsedLine, SyntaxError> {
+    // strip comment after the first `#`
+    let s = src.split('#').next().unwrap(); // iterator guaranteed not empty
+
+    // split optional label and the rest of the line
+    let (label, rest) = if let Some((l, s)) = s.split_once(':') {
+        // strip whitespaces and validate label
+        (Some(validate_label(l.trim())?), s)
+    } else {
+        (None, s)
+    };
+
+    // handle the rest as an optional statement
+    let rest = rest.trim();
+    let statement = if rest.is_empty() {
+        None
+    } else {
+        Some(parse_statement(rest)?)
+    };
+
+    Ok(ParsedLine { label, statement })
+}
+
+fn validate_label(label: &str) -> Result<&str, SyntaxError> {
+    let re = Regex::new(r"^[A-Za-z][0-9A-Za-z_]*$").unwrap();
+
+    if re.is_match(label) {
+        Ok(label)
+    } else {
+        Err(SyntaxError)
+    }
+}
+
+fn parse_statement(src: &str) -> Result<Statement, SyntaxError> {
+    let (command, args) = if let Some((s, t)) = src.split_once(char::is_whitespace) {
+        (s, t.split(',').map(|s| s.trim()).collect())
+    } else {
+        (src, vec![])
+    };
+
+    macro_rules! parse_args {
+        ($f:ident) => {{
+            let [a] = args[..] else { return Err(SyntaxError); };
+            $f(a)?
+        }};
+        ($f:ident, $g:ident) => {{
+            let [a, b] = args[..] else { return Err(SyntaxError); };
+            ($f(a)?, $g(b)?)
+        }};
     }
 
-    /// Require a token, err if no more is available.
-    fn require_token(&mut self) -> Result<Token, SyntaxError> {
-        match self.tokens.next() {
-            Some(r) => r,
-            None => Err(SyntaxError),
-        }
+    macro_rules! noargs {
+        ($variant:ident) => {{
+            if !args.is_empty() {
+                return Err(SyntaxError);
+            }
+            Statement::$variant
+        }};
     }
 
-    /// Assert the next token is as expected.
-    fn assert_token(&mut self, expected: Token) -> Result<(), SyntaxError> {
-        if self.require_token()? == expected {
-            Ok(())
+    macro_rules! directive {
+        ($variant:ident) => {{
+            let n = parse_args!(number);
+            Statement::$variant(n.try_into().map_err(|_| SyntaxError)?)
+        }};
+    }
+
+    macro_rules! op {
+        ($op:ident) => {{
+            let (src, dest) = parse_args!(register, register);
+            Statement::Iopq {
+                op: Op::$op,
+                src,
+                dest,
+            }
+        }};
+    }
+
+    macro_rules! j {
+        ($cond:ident) => {{
+            let target = parse_args!(constant);
+            Statement::Ij {
+                cond: Cond::$cond,
+                target,
+            }
+        }};
+    }
+
+    macro_rules! cmov {
+        ($cond:ident) => {{
+            let (src, dest) = parse_args!(register, register);
+            Statement::Icmov {
+                cond: Cond::$cond,
+                src,
+                dest,
+            }
+        }};
+    }
+
+    let statement = match command {
+        ".byte" => directive!(Dbyte),
+        ".word" => directive!(Dword),
+        ".long" => directive!(Dlong),
+        ".quad" => directive!(Dquad),
+        ".pos" => directive!(Dpos),
+        ".align" => directive!(Dalign),
+
+        "halt" => noargs!(Ihalt),
+        "nop" => noargs!(Inop),
+
+        "rrmovq" => {
+            let (src, dest) = parse_args!(register, register);
+            Statement::Irrmovq { src, dest }
+        }
+        "irmovq" => {
+            let (value, dest) = parse_args!(constant, register);
+            Statement::Iirmovq { dest, value }
+        }
+        "rmmovq" => {
+            let (src, mem) = parse_args!(register, memory);
+            Statement::Irmmovq { src, mem }
+        }
+        "mrmovq" => {
+            let (mem, dest) = parse_args!(memory, register);
+            Statement::Imrmovq { dest, mem }
+        }
+
+        "addq" => op!(Add),
+        "subq" => op!(Sub),
+        "andq" => op!(And),
+        "xorq" => op!(Xor),
+
+        "jmp" => j!(Always),
+        "jle" => j!(Le),
+        "jl" => j!(L),
+        "je" => j!(E),
+        "jne" => j!(Ne),
+        "jge" => j!(Ge),
+        "jg" => j!(G),
+
+        "cmovle" => cmov!(Le),
+        "cmovl" => cmov!(L),
+        "cmove" => cmov!(E),
+        "cmovne" => cmov!(Ne),
+        "cmovge" => cmov!(Ge),
+        "cmovg" => cmov!(G),
+
+        "call" => {
+            let c = parse_args!(constant);
+            Statement::Icall(c)
+        }
+        "ret" => noargs!(Iret),
+
+        "pushq" => {
+            let r = parse_args!(register);
+            Statement::Ipushq(r)
+        }
+        "popq" => {
+            let r = parse_args!(register);
+            Statement::Ipopq(r)
+        }
+
+        _ => return Err(SyntaxError),
+    };
+
+    Ok(statement)
+}
+
+fn number(src: &str) -> Result<u64, SyntaxError> {
+    // NOTE: In X86, `$` is used to prefix an immediate value.
+    // `$8` means the literal, while `8` is a memory access at that offset.
+    // This is unambiguous in Y86, so `$` is optional.
+    let s = src.strip_prefix('$').unwrap_or(src);
+
+    if let Some(t) = s.strip_prefix("0x") {
+        u64::from_str_radix(t, 16)
+    } else {
+        s.parse()
+    }
+    .map_err(|_| SyntaxError)
+}
+
+fn constant(src: &str) -> Result<Constant, SyntaxError> {
+    if src.starts_with(|c: char| c == '$' || c.is_ascii_digit()) {
+        number(src).map(Constant::Literal)
+    } else {
+        Ok(Constant::Label(validate_label(src)?))
+    }
+}
+
+fn register(src: &str) -> Result<Register, SyntaxError> {
+    use Register::*;
+
+    let reg = match src {
+        "%rax" => Rax,
+        "%rcx" => Rcx,
+        "%rdx" => Rdx,
+        "%rbx" => Rbx,
+        "%rsp" => Rsp,
+        "%rbp" => Rbp,
+        "%rsi" => Rsi,
+        "%rdi" => Rdi,
+        "%r8" => R8,
+        "%r9" => R9,
+        "%r10" => R10,
+        "%r11" => R11,
+        "%r12" => R12,
+        "%r13" => R13,
+        "%r14" => R14,
+        _ => return Err(SyntaxError),
+    };
+
+    Ok(reg)
+}
+
+fn memory(src: &str) -> Result<Memory, SyntaxError> {
+    let re = Regex::new(r"^(.*)\((.*)\)$").unwrap();
+    let mem = if let Some(caps) = re.captures(src) {
+        // The difference between `caps.get(1).unwrap().as_str()` and
+        // `&caps[1]` is that the lifetime of the former is associated with
+        // the haystack `src` while that of the latter with `caps` due to how
+        // the `Index` trait is defined.
+        let offset = caps.get(1).unwrap().as_str().trim();
+        let reg = caps[2].trim();
+
+        let offset = if offset.is_empty() {
+            Constant::Literal(0)
         } else {
-            Err(SyntaxError)
-        }
-    }
-
-    /// Assert the next token is a register.
-    fn assert_register(&mut self) -> Result<Register, SyntaxError> {
-        match self.require_token()? {
-            Token::Reg(r) => Ok(r),
-            _ => Err(SyntaxError),
-        }
-    }
-
-    /// Assert the next token is a number.
-    /// Note that a number is different from a constant literal,
-    /// which should always be preceded by `$`.
-    fn assert_number(&mut self) -> Result<u64, SyntaxError> {
-        match self.require_token()? {
-            Token::Number(n) => Ok(n),
-            _ => Err(SyntaxError),
-        }
-    }
-
-    /// Assert the following tokens represent a constant,
-    /// i.e. `$<number>` or `<label>`.
-    fn assert_constant(&mut self) -> Result<Constant, SyntaxError> {
-        match self.require_token()? {
-            Token::Dollar => Ok(Constant::Literal(self.assert_number()?)),
-            Token::Label(s) => Ok(Constant::Label(s)),
-            _ => Err(SyntaxError),
-        }
-    }
-
-    /// Assert the following tokens represent a memory reference,
-    /// i.e. `(<reg>)` or `<offset>(<reg>)`.
-    fn assert_memory(&mut self) -> Result<(Constant, Register), SyntaxError> {
-        let offset = match self.require_token()? {
-            Token::Lparen => Constant::Literal(0),
-            Token::Number(n) => {
-                self.assert_token(Token::Lparen)?;
-                Constant::Literal(n)
-            }
-            // TODO: Should we support label as an offset?
-            _ => return Err(SyntaxError),
+            constant(offset)?
         };
-        let reg = self.assert_register()?;
-        self.assert_token(Token::Rparen)?;
+        let reg = Some(register(reg)?);
 
-        Ok((offset, reg))
-    }
-}
+        Memory { reg, offset }
+    } else {
+        Memory {
+            reg: None,
+            offset: constant(src)?,
+        }
+    };
 
-impl Iterator for Parser<'_> {
-    type Item = Result<Statement, SyntaxError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let r = self.tokens.next()?;
-
-        let result = (|| {
-            macro_rules! directive {
-                ($ident:ident $(, $type:ty)?) => {{
-                    let n = self.assert_number()?;
-                    Statement::$ident(n $(as $type)?)
-                }};
-            }
-
-            macro_rules! binop {
-                ($ident:ident $(, $extra:ident)?) => {{
-                    let src = self.assert_register()?;
-                    self.assert_token(Token::Comma)?;
-                    let dest = self.assert_register()?;
-                    Statement::$ident { $($extra,)? src, dest }
-                }};
-            }
-
-            let stmt = match r? {
-                Token::Ihalt => Statement::Ihalt,
-                Token::Inop => Statement::Inop,
-
-                Token::Irrmovq => binop!(Irrmovq),
-
-                Token::Iirmovq => {
-                    let value = self.assert_constant()?;
-                    self.assert_token(Token::Comma)?;
-                    let dest = self.assert_register()?;
-                    Statement::Iirmovq { dest, value }
-                }
-
-                Token::Irmmovq => {
-                    let src = self.assert_register()?;
-                    self.assert_token(Token::Comma)?;
-                    let (offset, dest) = self.assert_memory()?;
-                    Statement::Irmmovq { src, dest, offset }
-                }
-
-                Token::Imrmovq => {
-                    let (offset, src) = self.assert_memory()?;
-                    self.assert_token(Token::Comma)?;
-                    let dest = self.assert_register()?;
-                    Statement::Imrmovq { src, dest, offset }
-                }
-
-                Token::Iopq(op) => binop!(Iopq, op),
-
-                Token::Ij(cond) => {
-                    let target = self.assert_constant()?;
-                    Statement::Ij { cond, target }
-                }
-
-                Token::Icmov(cond) => binop!(Icmov, cond),
-
-                Token::Icall => {
-                    let target = self.assert_constant()?;
-                    Statement::Icall(target)
-                }
-                Token::Iret => Statement::Iret,
-
-                Token::Ipushq => {
-                    let reg = self.assert_register()?;
-                    Statement::Ipushq(reg)
-                }
-                Token::Ipopq => {
-                    let reg = self.assert_register()?;
-                    Statement::Ipopq(reg)
-                }
-
-                Token::Label(s) => {
-                    self.assert_token(Token::Colon)?;
-                    Statement::LabelDef(s)
-                }
-
-                Token::Dbyte => directive!(Dbyte, u8),
-                Token::Dword => directive!(Dword, u16),
-                Token::Dlong => directive!(Dlong, u32),
-                Token::Dquad => directive!(Dquad),
-                Token::Dpos => directive!(Dpos),
-                Token::Dalign => directive!(Dalign),
-
-                _ => return Err(SyntaxError),
-            };
-
-            Ok(stmt)
-        })();
-
-        Some(result)
-    }
+    Ok(mem)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use Cond::*;
     use Constant::*;
     use Op::*;
@@ -181,117 +269,161 @@ mod tests {
     use Statement::*;
 
     #[test]
-    fn sum() {
-        let src = "\
-# Execution begins at address 0
-        .pos 0
-        irmovq stack, %rsp  	# Set up stack pointer
-        call main		# Execute main program
-        halt			# Terminate program
-
-# Array of 4 elements
-        .align 8
-array: 
-        .quad 0x000d000d000d
-        .quad 0x00c000c000c0
-        .quad 0x0b000b000b00
-        .quad 0xa000a000a000
-
-main:
-        irmovq array,%rdi
-        irmovq $4,%rsi
-        call sum		# sum(array, 4)
-        ret
-
-# long sum(long *start, long count)
-# start in %rdi, count in %rsi
-sum:
-        irmovq $8,%r8        # Constant 8
-        irmovq $1,%r9	     # Constant 1
-        xorq %rax,%rax	     # sum = 0
-        andq %rsi,%rsi	     # Set CC
-        jmp     test         # Goto test
-loop:
-        mrmovq (%rdi),%r10   # Get *start
-        addq %r10,%rax       # Add to sum
-        addq %r8,%rdi        # start++
-        subq %r9,%rsi        # count--.  Set CC
-test:
-        jne    loop          # Stop when 0
-        ret                  # Return
-
-# Stack starts here and grows to lower addresses
-        .pos 0x200
-stack:
-";
-
-        macro_rules! irmovq {
-            ($r:ident, $s:expr) => {
-                Iirmovq {
-                    dest: $r,
-                    value: Label($s.to_string()),
-                }
-            };
-            ($r:ident, $n:expr, u64) => {
-                Iirmovq {
-                    dest: $r,
-                    value: Literal($n),
-                }
-            };
-        }
-
-        let def = |s: &str| LabelDef(s.to_string());
-        let op = |op, src, dest| Iopq { op, src, dest };
-        let j = |cond, s: &str| Ij {
-            cond,
-            target: Label(s.to_string()),
-        };
-
-        let expected = vec![
-            Dpos(0),
-            irmovq!(Rsp, "stack"),
-            Icall(Label("main".to_string())),
-            Ihalt,
-            //
-            Dalign(8),
-            def("array"),
-            Dquad(0x000d000d000d),
-            Dquad(0x00c000c000c0),
-            Dquad(0x0b000b000b00),
-            Dquad(0xa000a000a000),
-            //
-            def("main"),
-            irmovq!(Rdi, "array"),
-            irmovq!(Rsi, 4, u64),
-            Icall(Label("sum".to_string())),
-            Iret,
-            //
-            def("sum"),
-            irmovq!(R8, 8, u64),
-            irmovq!(R9, 1, u64),
-            op(Xor, Rax, Rax),
-            op(And, Rsi, Rsi),
-            j(Always, "test"),
-            def("loop"),
-            Imrmovq {
-                src: Rdi,
-                dest: R10,
-                offset: Literal(0),
-            },
-            op(Add, R10, Rax),
-            op(Add, R8, Rdi),
-            op(Sub, R9, Rsi),
-            def("test"),
-            j(Ne, "loop"),
-            Iret,
-            //
-            Dpos(0x200),
-            def("stack"),
+    fn line_components() {
+        let labels = [
+            ("", None),
+            ("main:", Some("main")),
+            ("    main:", Some("main")),
+            ("    main    :", Some("main")),
+        ];
+        let statements = [
+            ("", None),
+            ("nop", Some(Statement::Inop)),
+            ("    nop", Some(Statement::Inop)),
+            ("    nop    ", Some(Statement::Inop)),
+        ];
+        let comments = [
+            "# comment",
+            "    # comment",
+            "    # comment:",
+            "    ## comment",
         ];
 
-        let parser = Parser::new(src);
-        for (stmt, exp) in parser.zip(expected) {
-            assert_eq!(stmt, Ok(exp));
+        for (ls, label) in labels {
+            for (ss, statement) in statements {
+                for comment in comments.iter() {
+                    let src = &format!("{ls}{ss}{comment}");
+                    assert_eq!(parse_line(&src), Ok(ParsedLine { label, statement }));
+                }
+            }
+        }
+    }
+
+    fn test_statement(src: &str, statement: Statement) {
+        assert_eq!(
+            parse_line(src),
+            Ok(ParsedLine {
+                label: None,
+                statement: Some(statement),
+            })
+        );
+    }
+
+    #[test]
+    fn directives() {
+        let cases = [
+            (".byte 0x4", Dbyte(0x4)),
+            (".word 0x4", Dword(0x4)),
+            (".long 0x4", Dlong(0x4)),
+            (".quad 0x4", Dquad(0x4)),
+            (".pos 0x4", Dpos(0x4)),
+            (".align 0x4", Dalign(0x4)),
+        ];
+
+        for (src, statement) in cases {
+            test_statement(src, statement);
+        }
+    }
+
+    #[test]
+    fn simple_instructions() {
+        #[rustfmt::skip]
+        let cases = [
+            ("halt", Ihalt),
+            ("nop", Inop),
+            ("rrmovq %rax, %rax", Irrmovq { src: Rax, dest: Rax }),
+            ("irmovq $1, %rax", Iirmovq { dest: Rax, value: Literal(1) }),
+            ("irmovq array, %rax", Iirmovq { dest: Rax, value: Label("array") }),
+            ("call main", Icall(Label("main"))),
+            ("call 0x8", Icall(Literal(8))),
+            ("ret", Iret),
+            ("pushq %rax", Ipushq(Rax)),
+            ("popq %rax", Ipopq(Rax)),
+        ];
+
+        for (src, statement) in cases {
+            test_statement(src, statement);
+        }
+    }
+
+    #[test]
+    fn rmmovq_mrmovq() {
+        #[rustfmt::skip]
+        let memories = [
+            ("(%rax)", Memory { reg: Some(Rax), offset: Literal(0) }),
+            ("0x4(%rax)", Memory { reg: Some(Rax), offset: Literal(4) }),
+            ("array(%rax)", Memory { reg: Some(Rax), offset: Label("array") }),
+            ("0x4", Memory { reg: None, offset: Literal(4) }),
+            ("array", Memory { reg: None, offset: Label("array") }),
+        ];
+
+        for (ms, mem) in memories {
+            test_statement(&format!("rmmovq %rax, {ms}"), Irmmovq { src: Rax, mem });
+            test_statement(&format!("mrmovq {ms}, %rax"), Imrmovq { dest: Rax, mem });
+        }
+    }
+
+    #[test]
+    fn opq() {
+        let cases = [
+            ("addq %rax, %rax", Add),
+            ("subq %rax, %rax", Sub),
+            ("andq %rax, %rax", And),
+            ("xorq %rax, %rax", Xor),
+        ];
+
+        for (src, op) in cases {
+            test_statement(
+                src,
+                Iopq {
+                    op,
+                    src: Rax,
+                    dest: Rax,
+                },
+            )
+        }
+    }
+
+    #[test]
+    fn jxx() {
+        let conds = [
+            ("jmp", Always),
+            ("jle", Le),
+            ("jl", L),
+            ("je", E),
+            ("jne", Ne),
+            ("jge", Ge),
+            ("jg", G),
+        ];
+        let dest = [("0x1234abcd", Literal(0x1234abcd)), ("main", Label("main"))];
+
+        for (cs, cond) in conds {
+            for (ds, target) in dest {
+                test_statement(&format!("{cs} {ds}"), Ij { cond, target });
+            }
+        }
+    }
+
+    #[test]
+    fn cmovxx() {
+        let cases = [
+            ("cmovle %rax, %rax", Le),
+            ("cmovl %rax, %rax", L),
+            ("cmove %rax, %rax", E),
+            ("cmovne %rax, %rax", Ne),
+            ("cmovge %rax, %rax", Ge),
+            ("cmovg %rax, %rax", G),
+        ];
+
+        for (src, cond) in cases {
+            test_statement(
+                src,
+                Icmov {
+                    cond,
+                    src: Rax,
+                    dest: Rax,
+                },
+            )
         }
     }
 }

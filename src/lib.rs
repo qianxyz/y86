@@ -1,4 +1,6 @@
 mod encode;
-mod lex;
 mod parse;
 mod syntax;
+
+pub use encode::encode;
+pub use parse::parse_line;
