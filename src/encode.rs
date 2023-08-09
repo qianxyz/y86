@@ -182,16 +182,29 @@ mod tests {
     use Statement::*;
 
     fn test_single_statement(statement: Statement, bytecode: Vec<u8>) {
-        let parsed = vec![ParsedLine {
-            label: None,
-            statement: Some(statement),
-        }];
+        let parsed = vec![
+            ParsedLine {
+                label: None,
+                statement: Some(statement),
+            },
+            // add a `halt` to test if addresses are aligned
+            ParsedLine {
+                label: None,
+                statement: Some(Ihalt),
+            },
+        ];
         assert_eq!(
             encode(&parsed),
-            Ok(vec![EncodedLine {
-                address: 0,
-                bytecode
-            }]),
+            Ok(vec![
+                EncodedLine {
+                    address: 0,
+                    bytecode: bytecode.clone()
+                },
+                EncodedLine {
+                    address: bytecode.len() as u64,
+                    bytecode: vec![0x0]
+                }
+            ]),
             "{statement:?}"
         )
     }
