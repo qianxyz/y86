@@ -365,4 +365,45 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn label_reference() {
+        //     irmovq stack, %rsp  # set up the stack pointer
+        //     .pos 0x80
+        // stack:
+        let lines = vec![
+            ParsedLine {
+                label: None,
+                statement: Some(Iirmovq {
+                    dest: Rsp,
+                    value: Label("stack"),
+                }),
+            },
+            ParsedLine {
+                label: None,
+                statement: Some(Dpos(0x80)),
+            },
+            ParsedLine {
+                label: Some("stack"),
+                statement: None,
+            },
+        ];
+
+        let expected = vec![
+            EncodedLine {
+                address: 0x0,
+                bytecode: vec![0x30, 0xf4, 0x80, 0, 0, 0, 0, 0, 0, 0],
+            },
+            EncodedLine {
+                address: 0x80,
+                bytecode: vec![],
+            },
+            EncodedLine {
+                address: 0x80,
+                bytecode: vec![],
+            },
+        ];
+
+        assert_eq!(encode(&lines), Ok(expected));
+    }
 }
