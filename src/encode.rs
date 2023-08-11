@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::parse::ParsedLine;
-use crate::syntax::*;
+use crate::{syntax::*, YasError, YasErrorContext};
 
 /// The encoded record of a line.
 #[derive(Debug, PartialEq, Eq)]
-pub struct EncodedLine {
+pub(crate) struct EncodedLine {
     /// The address of the line.
     pub address: u64,
 
@@ -14,18 +14,55 @@ pub struct EncodedLine {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct EncodeError; // TODO: Context
+pub(crate) enum EncodeError<'a> {
+    /// Multiple definition of a label.
+    MultiDef(&'a str),
 
-pub fn encode(lines: &[ParsedLine]) -> Result<Vec<EncodedLine>, EncodeError> {
+    /// A `.pos` going backward in address.
+    BackwardPos { pc: u64, pos: u64 },
+
+    /// An undefined label.
+    Undefined(&'a str),
+}
+
+impl std::fmt::Display for EncodeError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EncodeError::MultiDef(label) => write!(f, "Multiple definition of label: {label}"),
+            EncodeError::BackwardPos { pc, pos } => {
+                write!(f, "Address going backward for .pos {pos}: Already at {pc}")
+            }
+            EncodeError::Undefined(label) => write!(f, "Undefined label: {label}"),
+        }
+    }
+}
+
+pub(crate) fn encode<'a>(
+    lines: &[ParsedLine<'a>],
+) -> Result<Vec<EncodedLine>, Vec<YasErrorContext<'a>>> {
     // The first pass: Calculate the addresses for the lines
-    let (addrs, labels) = calculate_address(&lines)?;
+    let (addrs, labels) = calculate_address(lines)?;
 
     // The second pass: Encode the instructions line by line
-    lines
-        .into_iter()
+    let (encs, errors): (Vec<_>, Vec<_>) = lines
+        .iter()
         .zip(addrs)
-        .map(|(line, addr)| encode_line(line, addr, &labels))
-        .collect()
+        .map(|(line, addr)| {
+            encode_line(line, addr, &labels).map_err(|e| YasErrorContext {
+                error: YasError::Encode(e),
+                lineno: line.lineno,
+                src: line.src,
+            })
+        })
+        .partition(Result::is_ok);
+    let encs: Vec<_> = encs.into_iter().map(Result::unwrap).collect();
+    let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
+
+    if errors.is_empty() {
+        Ok(encs)
+    } else {
+        Err(errors)
+    }
 }
 
 /// A hashmap from label strings to addresses.
@@ -36,9 +73,10 @@ type LabelAddrs<'a> = HashMap<&'a str, u64>;
 /// and a hashmap for the addresses of labels.
 fn calculate_address<'a>(
     lines: &[ParsedLine<'a>],
-) -> Result<(Vec<u64>, LabelAddrs<'a>), EncodeError> {
+) -> Result<(Vec<u64>, LabelAddrs<'a>), Vec<YasErrorContext<'a>>> {
     let mut addrs = Vec::new();
     let mut labels = LabelAddrs::new();
+    let mut errors = Vec::new();
 
     let mut pc = 0;
 
@@ -47,15 +85,24 @@ fn calculate_address<'a>(
         if let Some(label) = line.label {
             // errs if the label is already defined
             if labels.contains_key(label) {
-                return Err(EncodeError);
+                errors.push(YasErrorContext {
+                    error: crate::YasError::Encode(EncodeError::MultiDef(label)),
+                    lineno: line.lineno,
+                    src: line.src,
+                });
+            } else {
+                labels.insert(label, pc);
             }
-            labels.insert(label, pc);
         }
 
         // `.pos` and `.align` should take effect immediately
         if let Some(Statement::Dpos(n)) = line.statement {
             if pc > n {
-                return Err(EncodeError);
+                errors.push(YasErrorContext {
+                    error: crate::YasError::Encode(EncodeError::BackwardPos { pc, pos: n }),
+                    lineno: line.lineno,
+                    src: line.src,
+                });
             } else {
                 pc = n;
             }
@@ -89,14 +136,18 @@ fn calculate_address<'a>(
         }
     }
 
-    Ok((addrs, labels))
+    if errors.is_empty() {
+        Ok((addrs, labels))
+    } else {
+        Err(errors)
+    }
 }
 
-fn encode_line(
-    line: &ParsedLine,
+fn encode_line<'a>(
+    line: &ParsedLine<'a>,
     address: u64,
     labels: &LabelAddrs,
-) -> Result<EncodedLine, EncodeError> {
+) -> Result<EncodedLine, EncodeError<'a>> {
     let bytecode = match line.statement {
         Some(s) => encode_statement(s, labels)?,
         None => Vec::new(),
@@ -105,7 +156,10 @@ fn encode_line(
     Ok(EncodedLine { address, bytecode })
 }
 
-fn encode_statement(statement: Statement, labels: &LabelAddrs) -> Result<Vec<u8>, EncodeError> {
+fn encode_statement<'a>(
+    statement: Statement<'a>,
+    labels: &LabelAddrs,
+) -> Result<Vec<u8>, EncodeError<'a>> {
     macro_rules! bytecode {
         () => { Vec::new() };
         ( $( $x:expr ),* ) => {{
@@ -160,14 +214,14 @@ fn encode_statement(statement: Statement, labels: &LabelAddrs) -> Result<Vec<u8>
     Ok(bytecode)
 }
 
-fn resolve_constant(c: Constant, labels: &LabelAddrs) -> Result<u64, EncodeError> {
+fn resolve_constant<'a>(c: Constant<'a>, labels: &LabelAddrs) -> Result<u64, EncodeError<'a>> {
     match c {
         Constant::Literal(n) => Ok(n),
-        Constant::Label(s) => labels.get(s).copied().ok_or(EncodeError),
+        Constant::Label(s) => labels.get(s).copied().ok_or(EncodeError::Undefined(s)),
     }
 }
 
-fn resolve_memory(mem: Memory, labels: &LabelAddrs) -> Result<(u8, u64), EncodeError> {
+fn resolve_memory<'a>(mem: Memory<'a>, labels: &LabelAddrs) -> Result<(u8, u64), EncodeError<'a>> {
     let reg = if let Some(r) = mem.reg { r as u8 } else { 0xf };
     let offset = resolve_constant(mem.offset, labels)?;
 
@@ -189,11 +243,15 @@ mod tests {
             ParsedLine {
                 label: None,
                 statement: Some(statement),
+                lineno: 0,
+                src: "",
             },
             // add a `halt` to test if addresses are aligned
             ParsedLine {
                 label: None,
                 statement: Some(Ihalt),
+                lineno: 1,
+                src: "",
             },
         ];
         assert_eq!(
@@ -344,10 +402,14 @@ mod tests {
                 ParsedLine {
                     label: None,
                     statement: Some(Dpos(pos)),
+                    lineno: 0,
+                    src: "",
                 },
                 ParsedLine {
                     label: None,
                     statement: Some(Dalign(width)),
+                    lineno: 1,
+                    src: "",
                 },
             ];
             assert_eq!(
@@ -378,14 +440,20 @@ mod tests {
                     dest: Rsp,
                     value: Label("stack"),
                 }),
+                lineno: 0,
+                src: "",
             },
             ParsedLine {
                 label: None,
                 statement: Some(Dpos(0x80)),
+                lineno: 1,
+                src: "",
             },
             ParsedLine {
                 label: Some("stack"),
                 statement: None,
+                lineno: 2,
+                src: "",
             },
         ];
 

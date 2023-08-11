@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Register {
+pub(crate) enum Register {
     Rax,
     Rcx,
     Rdx,
@@ -19,7 +19,7 @@ pub enum Register {
 
 /// Operator variants for `OPq` instructions.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Op {
+pub(crate) enum Op {
     Add,
     Sub,
     And,
@@ -28,7 +28,7 @@ pub enum Op {
 
 /// Condition variants for `jXX` and `cmovXX` instructions.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Cond {
+pub(crate) enum Cond {
     Always,
     Le,
     L,
@@ -40,7 +40,7 @@ pub enum Cond {
 
 /// A constant value, which can be a literal or a label.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Constant<'a> {
+pub(crate) enum Constant<'a> {
     Literal(u64),
     Label(&'a str),
 }
@@ -53,14 +53,14 @@ pub enum Constant<'a> {
 /// - Ident
 /// - Ident(Reg)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct Memory<'a> {
+pub(crate) struct Memory<'a> {
     pub reg: Option<Register>,
     pub offset: Constant<'a>,
 }
 
 /// A statement, which can be a directive or an instruction.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Statement<'a> {
+pub(crate) enum Statement<'a> {
     // Directives
     Dbyte(u8),
     Dword(u16),
