@@ -15,6 +15,24 @@ pub struct YasErrorContext<'a> {
     src: &'a str,
 }
 
+impl std::fmt::Display for YasErrorContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "Error: {}",
+            match &self.error {
+                YasError::Syntax(e) => e.to_string(),
+                YasError::Encode(e) => e.to_string(),
+            }
+        )?;
+        write!(f, "\t{} | {}", self.lineno, self.src)?;
+
+        Ok(())
+    }
+}
+
+impl std::error::Error for YasErrorContext<'_> {}
+
 pub fn assemble<'a>(
     src: impl Iterator<Item = &'a str>,
 ) -> Result<Vec<String>, Vec<YasErrorContext<'a>>> {

@@ -1,5 +1,7 @@
+use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
+use std::process::exit;
 
 use y86::assemble;
 
@@ -15,7 +17,7 @@ struct Cli {
     output: Option<PathBuf>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     let source = cli.source.clone();
@@ -25,10 +27,19 @@ fn main() {
         p
     });
 
-    let src = fs::read_to_string(source).unwrap();
+    let src = fs::read_to_string(source)?;
 
-    // TODO: print error messages for errors
-    let out = assemble(src.lines()).unwrap();
+    let out = match assemble(src.lines()) {
+        Ok(out) => out,
+        Err(errors) => {
+            for e in errors {
+                eprintln!("{e}");
+            }
+            exit(1);
+        }
+    };
 
-    fs::write(output, out.join("\n")).unwrap();
+    fs::write(output, out.join("\n"))?;
+
+    Ok(())
 }
