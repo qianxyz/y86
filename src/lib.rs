@@ -2,6 +2,8 @@ mod encode;
 mod parse;
 mod syntax;
 
+mod decode;
+
 #[derive(Debug, PartialEq, Eq)]
 enum YasError<'a> {
     Syntax(parse::SyntaxError<'a>),
