@@ -107,7 +107,6 @@ impl VM {
                     m.copy_from_slice(&self.registers[ra].to_le_bytes());
                 } else {
                     self.stat = Stat::Adr;
-                    return;
                 }
             }
 
@@ -120,7 +119,6 @@ impl VM {
                     self.registers[ra] = u64::from_le_bytes(m.try_into().unwrap());
                 } else {
                     self.stat = Stat::Adr;
-                    return;
                 }
             }
 
@@ -161,7 +159,6 @@ impl VM {
                     self.pc = dest as usize;
                 } else {
                     self.stat = Stat::Adr;
-                    return;
                 }
             }
 
@@ -173,7 +170,6 @@ impl VM {
                     self.pc = usize::from_le_bytes(m.try_into().unwrap());
                 } else {
                     self.stat = Stat::Adr;
-                    return;
                 }
             }
 
@@ -186,7 +182,6 @@ impl VM {
                     self.registers[4] -= 8;
                 } else {
                     self.stat = Stat::Adr;
-                    return;
                 }
             }
 
@@ -199,7 +194,6 @@ impl VM {
                     self.registers[ra] = u64::from_le_bytes(m.try_into().unwrap());
                 } else {
                     self.stat = Stat::Adr;
-                    return;
                 }
             }
 
