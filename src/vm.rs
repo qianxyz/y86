@@ -38,13 +38,13 @@ impl VM {
 
     fn branch(&self, lo: usize) -> bool {
         match lo {
-            0x0 => true,                            // rrmovq
-            0x1 => (self.sf ^ self.of) | self.zf,   // cmovle
-            0x2 => self.sf ^ self.of,               // cmovl
-            0x3 => self.zf,                         // cmove
-            0x4 => !self.zf,                        // cmovne
-            0x5 => !(self.sf ^ self.of),            // cmovge
-            0x6 => !(self.sf ^ self.of) & !self.zf, // cmovg
+            0x0 => true,                            // always
+            0x1 => (self.sf ^ self.of) | self.zf,   // le
+            0x2 => self.sf ^ self.of,               // l
+            0x3 => self.zf,                         // e
+            0x4 => !self.zf,                        // ne
+            0x5 => !(self.sf ^ self.of),            // ge
+            0x6 => !(self.sf ^ self.of) & !self.zf, // g
             _ => unreachable!(),
         }
     }
