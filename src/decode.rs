@@ -1,5 +1,3 @@
-use hex;
-
 #[derive(Debug, PartialEq, Eq)]
 struct DecodeError;
 

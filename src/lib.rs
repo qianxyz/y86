@@ -3,6 +3,7 @@ mod parse;
 mod syntax;
 
 mod decode;
+mod vm;
 
 #[derive(Debug, PartialEq, Eq)]
 enum YasError<'a> {
