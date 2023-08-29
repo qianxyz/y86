@@ -129,8 +129,18 @@ impl VM {
                 let (ra, rb) = read!();
                 let a = self.registers[ra];
                 let b = self.registers[rb];
-
-                todo!()
+                let (result, overflow) = match lo {
+                    0x0 => a.overflowing_add(b), // addq
+                    0x1 => a.overflowing_sub(b), // subq
+                    0x2 => (a & b, false),       // andq
+                    0x3 => (a ^ b, false),       // xorq
+                    _ => unreachable!(),
+                };
+                self.of = overflow;
+                // FIXME: SF is set as if it is signed arithmetic
+                self.sf = (result as i64) < 0;
+                self.zf = result == 0;
+                self.registers[ra] = result;
             }
 
             // jXX
