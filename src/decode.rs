@@ -1,4 +1,4 @@
-use crate::YisErrorContext;
+use crate::{YisErrorContext, MEM_SIZE};
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum DecodeError<'a> {
@@ -19,8 +19,8 @@ impl std::fmt::Display for DecodeError<'_> {
 
 pub(crate) fn decode<'a>(
     obj: impl Iterator<Item = &'a str>,
-) -> Result<Vec<u8>, Vec<YisErrorContext<'a>>> {
-    let mut memory = Vec::new();
+) -> Result<[u8; MEM_SIZE], Vec<YisErrorContext<'a>>> {
+    let mut memory = [0; MEM_SIZE];
     let mut errors = Vec::new();
 
     for (line, lineno) in obj.zip(1..) {
@@ -57,9 +57,7 @@ pub(crate) fn decode<'a>(
             continue;
         };
 
-        if memory.len() < addr + bytes.len() {
-            memory.resize(addr + bytes.len(), 0);
-        }
+        // TODO: Memory bound check
         memory[addr..addr + bytes.len()].copy_from_slice(&bytes);
     }
 
@@ -81,7 +79,7 @@ mod tests {
 0x000:                      | label:
 0x000: 00                   |   halt
 ";
-        let expected = vec![0];
+        let expected = [0; MEM_SIZE];
 
         assert_eq!(decode(obj.lines()), Ok(expected))
     }
@@ -94,6 +92,7 @@ mod tests {
 0x014: 6020                 |   addq %rdx,%rax
 0x016: 00                   |   halt
 ";
+
         let expected = "\
 30f20a00000000000000\
 30f00300000000000000\
@@ -101,7 +100,9 @@ mod tests {
 00\
 ";
 
-        assert_eq!(decode(obj.lines()).unwrap(), hex::decode(expected).unwrap())
+        let mut expected = hex::decode(expected).unwrap();
+        expected.resize(MEM_SIZE, 0);
+        assert_eq!(decode(obj.lines()).unwrap().as_slice(), &expected);
     }
 
     #[test]
@@ -131,6 +132,8 @@ mod tests {
 00000000000000000000000000\
 ";
 
-        assert_eq!(decode(obj.lines()).unwrap(), hex::decode(expected).unwrap())
+        let mut expected = hex::decode(expected).unwrap();
+        expected.resize(MEM_SIZE, 0);
+        assert_eq!(decode(obj.lines()).unwrap().as_slice(), &expected);
     }
 }

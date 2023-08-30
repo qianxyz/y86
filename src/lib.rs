@@ -72,6 +72,8 @@ pub fn assemble<'a>(
 
 pub use vm::{Stat, VM};
 
+pub const MEM_SIZE: usize = 1 << 13;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct YisErrorContext<'a> {
     error: decode::DecodeError<'a>,

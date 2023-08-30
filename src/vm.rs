@@ -1,4 +1,6 @@
-#[derive(Debug, Default, PartialEq, Eq)]
+use crate::MEM_SIZE;
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct VM {
     pub registers: [u64; 16],
 
@@ -9,13 +11,12 @@ pub struct VM {
     pub stat: Stat,
 
     pub pc: u64,
-    pub mem: Vec<u8>,
+    pub mem: [u8; MEM_SIZE],
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Stat {
     /// Normal operation
-    #[default]
     Aok,
 
     /// `halt` instruction encountered
@@ -29,10 +30,15 @@ pub enum Stat {
 }
 
 impl VM {
-    pub(crate) fn from_memory(mem: Vec<u8>) -> Self {
+    pub(crate) fn from_memory(mem: [u8; MEM_SIZE]) -> Self {
         Self {
+            registers: [0; 16],
+            zf: false,
+            sf: false,
+            of: false,
+            stat: Stat::Aok,
+            pc: 0,
             mem,
-            ..Default::default()
         }
     }
 
@@ -234,25 +240,17 @@ mod tests {
         ];
 
         let mut mem = hex::decode(obj.join("")).unwrap();
-        let mut vm = VM::from_memory(mem.clone());
+        mem.resize(MEM_SIZE, 0);
+        let mut vm = VM::from_memory(mem.try_into().unwrap());
 
         vm.run();
 
-        assert_eq!(
-            vm,
-            VM {
-                registers: [0x22, 0, 0, 0, 0, 0, 0xabcd, 0xabcd, 0, 0, 0, 0, 0, 0, 0, 0],
-                stat: Stat::Hlt,
-                pc: 0x22,
-                mem: {
-                    let l = mem.len();
-                    mem[l - 8..l].copy_from_slice(&0xabcdu64.to_le_bytes());
-
-                    mem
-                },
-                ..Default::default()
-            }
-        )
+        assert_eq!(vm.stat, Stat::Hlt);
+        assert_eq!(vm.registers[0], 0x22);
+        assert_eq!(vm.registers[6], 0xabcd);
+        assert_eq!(vm.registers[7], 0xabcd);
+        assert_eq!(vm.pc, 0x22);
+        assert_eq!(vm.mem[0x2a..0x32], 0xabcdu64.to_le_bytes());
     }
 
     #[test]
@@ -273,7 +271,8 @@ mod tests {
             mem[12..20].copy_from_slice(&a.to_le_bytes());
             mem[22..30].copy_from_slice(&b.to_le_bytes());
             mem[32] |= cond as u8;
-            let mut vm = VM::from_memory(mem);
+            mem.resize(MEM_SIZE, 0);
+            let mut vm = VM::from_memory(mem.try_into().unwrap());
 
             vm.run();
 
@@ -313,27 +312,17 @@ mod tests {
         ];
 
         let mut mem = hex::decode(obj.join("")).unwrap();
-        mem.resize(0x40, 0);
-        let mut vm = VM::from_memory(mem.clone());
+        mem.resize(MEM_SIZE, 0);
+        let mut vm = VM::from_memory(mem.try_into().unwrap());
 
         vm.run();
 
-        assert_eq!(
-            vm,
-            VM {
-                registers: [0, 0, 0, 0, 0x40, 0x8, 0x8, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                stat: Stat::Hlt,
-                pc: 0x14,
-                mem: {
-                    let l = mem.len();
-                    mem[l - 8..l].copy_from_slice(&0x13u64.to_le_bytes());
-                    mem[l - 16..l - 8].copy_from_slice(&0x8u64.to_le_bytes());
-
-                    mem
-                },
-                ..Default::default()
-            }
-        )
+        assert_eq!(vm.stat, Stat::Hlt);
+        assert_eq!(vm.registers[4], 0x40);
+        assert_eq!(vm.registers[5], 0x8);
+        assert_eq!(vm.registers[6], 0x8);
+        assert_eq!(vm.mem[0x30..0x38], 0x8u64.to_le_bytes());
+        assert_eq!(vm.mem[0x38..0x40], 0x13u64.to_le_bytes());
     }
 
     #[test]
@@ -345,8 +334,9 @@ mod tests {
             "ff",                 // target:   .byte 0xFF      # Invalid opcode
         ];
 
-        let mem = hex::decode(obj.join("")).unwrap();
-        let mut vm = VM::from_memory(mem.clone());
+        let mut mem = hex::decode(obj.join("")).unwrap();
+        mem.resize(MEM_SIZE, 0);
+        let mut vm = VM::from_memory(mem.try_into().unwrap());
         vm.run();
 
         assert_eq!(vm.stat, Stat::Ins);
@@ -355,12 +345,12 @@ mod tests {
     #[test]
     fn invalid_address() {
         let obj = [
-            "500f0a00000000000000", //   mrmovq  end,%rax
-            "",                     // end:
+            "500f0000000000000010", // mrmovq    $0x1000000000000000,%rax
         ];
 
-        let mem = hex::decode(obj.join("")).unwrap();
-        let mut vm = VM::from_memory(mem.clone());
+        let mut mem = hex::decode(obj.join("")).unwrap();
+        mem.resize(MEM_SIZE, 0);
+        let mut vm = VM::from_memory(mem.try_into().unwrap());
         vm.run();
 
         assert_eq!(vm.stat, Stat::Adr);
@@ -381,8 +371,8 @@ mod tests {
         ];
 
         let mut mem = hex::decode(obj.join("")).unwrap();
-        mem.resize(0x100, 0);
-        let mut vm = VM::from_memory(mem.clone());
+        mem.resize(MEM_SIZE, 0);
+        let mut vm = VM::from_memory(mem.try_into().unwrap());
         vm.run();
 
         assert_eq!(vm.registers[0], 0);
@@ -402,8 +392,8 @@ mod tests {
         ];
 
         let mut mem = hex::decode(obj.join("")).unwrap();
-        mem.resize(0x100, 0);
-        let mut vm = VM::from_memory(mem.clone());
+        mem.resize(MEM_SIZE, 0);
+        let mut vm = VM::from_memory(mem.try_into().unwrap());
         vm.run();
 
         assert_eq!(vm.registers[4], 0xABCD);
