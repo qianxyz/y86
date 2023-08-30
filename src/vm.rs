@@ -161,8 +161,8 @@ impl VM {
                 let a = self.registers[ra];
                 let b = self.registers[rb];
                 let (result, overflow) = match lo {
-                    0x0 => (a as i64).overflowing_add(b as i64), // addq
-                    0x1 => (a as i64).overflowing_sub(b as i64), // subq
+                    0x0 => (b as i64).overflowing_add(a as i64), // addq
+                    0x1 => (b as i64).overflowing_sub(a as i64), // subq
                     0x2 => ((a & b) as i64, false),              // andq
                     0x3 => ((a ^ b) as i64, false),              // xorq
                     _ => unreachable!(),
@@ -291,7 +291,7 @@ mod tests {
                 (G, u64::gt),
                 (Always, |_, _| true),
             ] {
-                helper(a, b, cond, cmp(&a, &b));
+                helper(a, b, cond, cmp(&b, &a));
             }
         }
     }
