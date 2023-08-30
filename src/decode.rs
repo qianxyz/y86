@@ -5,6 +5,7 @@ pub(crate) enum DecodeError<'a> {
     NoSep,
     Addr(&'a str),
     Bytes(&'a str),
+    MemBound,
 }
 
 impl std::fmt::Display for DecodeError<'_> {
@@ -13,6 +14,7 @@ impl std::fmt::Display for DecodeError<'_> {
             Self::NoSep => write!(f, "Missing Separator `|`"),
             Self::Addr(a) => write!(f, "Invalid address: {a}"),
             Self::Bytes(b) => write!(f, "Invalid bytecode: {b}"),
+            Self::MemBound => write!(f, "Exceed memory bound"),
         }
     }
 }
@@ -57,7 +59,14 @@ pub(crate) fn decode<'a>(
             continue;
         };
 
-        // TODO: Memory bound check
+        if addr + bytes.len() > MEM_SIZE {
+            errors.push(YisErrorContext {
+                error: DecodeError::MemBound,
+                lineno,
+                src: line,
+            });
+            continue;
+        }
         memory[addr..addr + bytes.len()].copy_from_slice(&bytes);
     }
 
