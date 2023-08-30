@@ -262,6 +262,41 @@ mod tests {
 
     #[test]
     fn stack() {
-        unimplemented!();
+        let obj = [
+            "30f44000000000000000", //   irmovq  stack,%rsp
+            "801400000000000000",   //   call    main
+            "00",                   //   halt
+            "",                     //
+            "30f50800000000000000", // main:     irmovq  $8,%rbp
+            "a05f",                 //   pushq   %rbp
+            "b06f",                 //   popq    %rsi
+            "90",                   //   ret
+            "0000000000",           //
+            "0000000000000000",     //
+            "0000000000000000",     //   .pos    0x40
+            "0000000000000000",     // stack:
+        ];
+
+        let mut mem = hex::decode(obj.join("")).unwrap();
+        let mut vm = VM::from_memory(mem.clone());
+
+        vm.run();
+
+        assert_eq!(
+            vm,
+            VM {
+                registers: [0, 0, 0, 0, 0x40, 0x8, 0x8, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                stat: Stat::Hlt,
+                pc: 0x14,
+                mem: {
+                    let l = mem.len();
+                    mem[l - 8..l].copy_from_slice(&0x13u64.to_le_bytes());
+                    mem[l - 16..l - 8].copy_from_slice(&0x8u64.to_le_bytes());
+
+                    mem
+                },
+                ..Default::default()
+            }
+        )
     }
 }
