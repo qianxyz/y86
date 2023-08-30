@@ -220,15 +220,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn simple() {
+    fn mov() {
         let obj = [
-            "30f00800000000000000", // irmovq $8,%rax
-            "2007",                 // rrmovq %rax,%rdi
-            "10",                   // nop
-            "00",                   // halt
+            "30f02200000000000000", //   irmovq  src,%rax
+            "50700000000000000000", //   mrmovq  (%rax),%rdi
+            "2076",                 //   rrmovq  %rdi,%rsi
+            "406f2a00000000000000", //   rmmovq  %rsi,dest
+            "10",                   //   nop
+            "00",                   //   halt
+            "",                     //
+            "cdab000000000000",     // src:      .quad   0xabcd
+            "0000000000000000",     // dest:     .quad   0x0
         ];
 
-        let mem = hex::decode(obj.join("")).unwrap();
+        let mut mem = hex::decode(obj.join("")).unwrap();
         let mut vm = VM::from_memory(mem.clone());
 
         vm.run();
@@ -236,12 +241,27 @@ mod tests {
         assert_eq!(
             vm,
             VM {
-                registers: [8, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0],
+                registers: [0x22, 0, 0, 0, 0, 0, 0xabcd, 0xabcd, 0, 0, 0, 0, 0, 0, 0, 0],
                 stat: Stat::Hlt,
-                pc: mem.len() as u64,
-                mem,
+                pc: 0x22,
+                mem: {
+                    let l = mem.len();
+                    mem[l - 8..l].copy_from_slice(&0xabcdu64.to_le_bytes());
+
+                    mem
+                },
                 ..Default::default()
             }
         )
+    }
+
+    #[test]
+    fn branch() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn stack() {
+        unimplemented!();
     }
 }
