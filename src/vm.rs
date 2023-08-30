@@ -280,12 +280,17 @@ mod tests {
             assert_eq!(vm.registers[0], if moved { 1 } else { 0 });
         }
 
-        let conds = [Le, L, E, Ne, Ge, G];
-        let cmps = [u64::le, u64::lt, u64::eq, u64::ne, u64::ge, u64::gt];
-
         for (a, b) in [(0, 0), (0, 1), (1, 0)] {
             helper(a, b, Always, true);
-            for (cond, cmp) in conds.into_iter().zip(cmps) {
+            for (cond, cmp) in [
+                (Le, u64::le as fn(&u64, &u64) -> _),
+                (L, u64::lt),
+                (E, u64::eq),
+                (Ne, u64::ne),
+                (Ge, u64::ge),
+                (G, u64::gt),
+                (Always, |_, _| true),
+            ] {
                 helper(a, b, cond, cmp(&a, &b));
             }
         }
