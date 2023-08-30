@@ -257,7 +257,38 @@ mod tests {
 
     #[test]
     fn branch() {
-        unimplemented!();
+        use crate::syntax::Cond::{self, *};
+
+        fn helper(a: u64, b: u64, cond: Cond, moved: bool) {
+            let obj = [
+                "30f50100000000000000", // irmovq    $1,%rbp
+                "30f70000000000000000", // irmovq    $<a>,%rdi
+                "30f60000000000000000", // irmovq    $<b>,%rsi
+                "6176",                 // subq      %rdi,%rsi
+                "2050",                 // rrmovq    %rbp,%rax
+                "00",                   // halt
+            ];
+
+            let mut mem = hex::decode(obj.join("")).unwrap();
+            mem[12..20].copy_from_slice(&a.to_le_bytes());
+            mem[22..30].copy_from_slice(&b.to_le_bytes());
+            mem[32] |= cond as u8;
+            let mut vm = VM::from_memory(mem);
+
+            vm.run();
+
+            assert_eq!(vm.registers[0], if moved { 1 } else { 0 });
+        }
+
+        let conds = [Le, L, E, Ne, Ge, G];
+        let cmps = [u64::le, u64::lt, u64::eq, u64::ne, u64::ge, u64::gt];
+
+        for (a, b) in [(0, 0), (0, 1), (1, 0)] {
+            helper(a, b, Always, true);
+            for (cond, cmp) in conds.into_iter().zip(cmps) {
+                helper(a, b, cond, cmp(&a, &b));
+            }
+        }
     }
 
     #[test]
@@ -271,13 +302,13 @@ mod tests {
             "a05f",                 //   pushq   %rbp
             "b06f",                 //   popq    %rsi
             "90",                   //   ret
-            "0000000000",           //
-            "0000000000000000",     //
-            "0000000000000000",     //   .pos    0x40
-            "0000000000000000",     // stack:
+            "",                     //
+            "",                     //   .pos    0x40
+            "",                     // stack:
         ];
 
         let mut mem = hex::decode(obj.join("")).unwrap();
+        mem.resize(0x40, 0);
         let mut vm = VM::from_memory(mem.clone());
 
         vm.run();
