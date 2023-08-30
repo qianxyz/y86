@@ -70,7 +70,7 @@ pub fn assemble<'a>(
     Ok(print)
 }
 
-pub use vm::VM;
+pub use vm::{Stat, VM};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct YisErrorContext<'a> {
