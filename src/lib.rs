@@ -69,3 +69,32 @@ pub fn assemble<'a>(
 
     Ok(print)
 }
+
+pub use vm::VM;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct YisErrorContext<'a> {
+    error: decode::DecodeError<'a>,
+    lineno: usize,
+    src: &'a str,
+}
+
+impl std::fmt::Display for YisErrorContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Error: {}", self.error)?;
+        write!(f, "\t{} | {}", self.lineno, self.src)?;
+
+        Ok(())
+    }
+}
+
+impl std::error::Error for YisErrorContext<'_> {}
+
+pub fn emulate<'a>(obj: impl Iterator<Item = &'a str>) -> Result<VM, Vec<YisErrorContext<'a>>> {
+    let mem = decode::decode(obj)?;
+    let mut vm = vm::VM::from_memory(mem);
+
+    vm.run();
+
+    Ok(vm)
+}

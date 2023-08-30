@@ -1,21 +1,61 @@
+use crate::YisErrorContext;
+
 #[derive(Debug, PartialEq, Eq)]
-struct DecodeError;
+pub(crate) enum DecodeError<'a> {
+    NoSep,
+    Addr(&'a str),
+    Bytes(&'a str),
+}
 
-fn decode<'a>(obj: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, DecodeError> {
+impl std::fmt::Display for DecodeError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoSep => write!(f, "Missing Separator `|`"),
+            Self::Addr(a) => write!(f, "Invalid address: {a}"),
+            Self::Bytes(b) => write!(f, "Invalid bytecode: {b}"),
+        }
+    }
+}
+
+pub(crate) fn decode<'a>(
+    obj: impl Iterator<Item = &'a str>,
+) -> Result<Vec<u8>, Vec<YisErrorContext<'a>>> {
     let mut memory = Vec::new();
+    let mut errors = Vec::new();
 
-    for line in obj {
+    for (line, lineno) in obj.zip(1..) {
         let Some((line, _)) = line.split_once('|') else {
-            return Err(DecodeError);
+            errors.push(YisErrorContext {
+                error: DecodeError::NoSep,
+                lineno,
+                src: line,
+            });
+            continue;
         };
 
         let Some((addr, bytes)) = line.split_once(':') else {
             continue;
         };
 
-        let addr = usize::from_str_radix(addr.trim().trim_start_matches("0x"), 16)
-            .map_err(|_| DecodeError)?;
-        let bytes = hex::decode(bytes.trim()).map_err(|_| DecodeError)?;
+        let addr = addr.trim();
+        let Ok(addr) = usize::from_str_radix(addr.trim_start_matches("0x"), 16) else {
+            errors.push(YisErrorContext {
+                error: DecodeError::Addr(addr),
+                lineno,
+                src: line,
+            });
+            continue;
+        };
+
+        let bytes = bytes.trim();
+        let Ok(bytes) = hex::decode(bytes.trim()) else {
+            errors.push(YisErrorContext {
+                error: DecodeError::Bytes(bytes),
+                lineno,
+                src: line,
+            });
+            continue;
+        };
 
         if memory.len() < addr + bytes.len() {
             memory.resize(addr + bytes.len(), 0);
@@ -23,7 +63,11 @@ fn decode<'a>(obj: impl Iterator<Item = &'a str>) -> Result<Vec<u8>, DecodeError
         memory[addr..addr + bytes.len()].copy_from_slice(&bytes);
     }
 
-    Ok(memory)
+    if errors.is_empty() {
+        Ok(memory)
+    } else {
+        Err(errors)
+    }
 }
 
 #[cfg(test)]

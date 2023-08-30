@@ -1,19 +1,19 @@
 #[derive(Debug, Default, PartialEq, Eq)]
-struct VM {
-    registers: [u64; 16],
+pub struct VM {
+    pub registers: [u64; 16],
 
-    zf: bool,
-    sf: bool,
-    of: bool,
+    pub zf: bool,
+    pub sf: bool,
+    pub of: bool,
 
-    stat: Stat,
+    pub stat: Stat,
 
-    pc: u64,
-    mem: Vec<u8>,
+    pub pc: u64,
+    pub mem: Vec<u8>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-enum Stat {
+pub enum Stat {
     /// Normal operation
     #[default]
     Aok,
@@ -29,7 +29,7 @@ enum Stat {
 }
 
 impl VM {
-    fn from_memory(mem: Vec<u8>) -> Self {
+    pub(crate) fn from_memory(mem: Vec<u8>) -> Self {
         Self {
             mem,
             ..Default::default()
@@ -208,7 +208,7 @@ impl VM {
         }
     }
 
-    fn run(&mut self) {
+    pub(crate) fn run(&mut self) {
         while self.stat == Stat::Aok {
             self.step();
         }
