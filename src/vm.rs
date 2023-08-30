@@ -170,7 +170,7 @@ impl VM {
                 self.of = overflow;
                 self.sf = result < 0;
                 self.zf = result == 0;
-                self.registers[ra] = result as u64;
+                self.registers[rb] = result as u64;
             }
 
             // jXX
@@ -334,5 +334,78 @@ mod tests {
                 ..Default::default()
             }
         )
+    }
+
+    #[test]
+    fn invalid_instruction() {
+        let obj = [
+            "6300",               //   xorq    %rax,%rax       # Set ZF to 1
+            "730c00000000000000", //   je      target          # Taken
+            "00",                 //   halt
+            "ff",                 // target:   .byte 0xFF      # Invalid opcode
+        ];
+
+        let mem = hex::decode(obj.join("")).unwrap();
+        let mut vm = VM::from_memory(mem.clone());
+        vm.run();
+
+        assert_eq!(vm.stat, Stat::Ins);
+    }
+
+    #[test]
+    fn invalid_address() {
+        let obj = [
+            "500f0a00000000000000", //   mrmovq  end,%rax
+            "",                     // end:
+        ];
+
+        let mem = hex::decode(obj.join("")).unwrap();
+        let mut vm = VM::from_memory(mem.clone());
+        vm.run();
+
+        assert_eq!(vm.stat, Stat::Adr);
+    }
+
+    #[test]
+    fn push_test() {
+        let obj = [
+            "30f40001000000000000", // irmovq    stack,%rsp
+            "2040",                 // rrmovq    %rsp,%rax
+            "a04f",                 // pushq     %rsp
+            "b02f",                 // popq      %rdx
+            "6120",                 // subq      %rdx,%rax
+            "00",                   // halt
+            "",                     //
+            "",                     //   .pos    0x100
+            "",                     // stack:
+        ];
+
+        let mut mem = hex::decode(obj.join("")).unwrap();
+        mem.resize(0x100, 0);
+        let mut vm = VM::from_memory(mem.clone());
+        vm.run();
+
+        assert_eq!(vm.registers[0], 0);
+    }
+
+    #[test]
+    fn pop_test() {
+        let obj = [
+            "30f40001000000000000", // irmovq    stack,%rsp
+            "30f0cdab000000000000", // irmovq    $0xABCD,%rax
+            "a00f",                 // pushq     %rax
+            "b04f",                 // popq      %rsp
+            "00",                   // halt
+            "",                     //
+            "",                     //   .pos    0x100
+            "",                     // stack:
+        ];
+
+        let mut mem = hex::decode(obj.join("")).unwrap();
+        mem.resize(0x100, 0);
+        let mut vm = VM::from_memory(mem.clone());
+        vm.run();
+
+        assert_eq!(vm.registers[4], 0xABCD);
     }
 }
