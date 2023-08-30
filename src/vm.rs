@@ -1,4 +1,4 @@
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 struct VM {
     registers: [u64; 16],
 
@@ -12,7 +12,7 @@ struct VM {
     mem: Vec<u8>,
 }
 
-#[derive(Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum Stat {
     /// Normal operation
     #[default]
@@ -211,5 +211,36 @@ impl VM {
         while self.stat == Stat::Aok {
             self.step();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple() {
+        let obj = [
+            "30f00800000000000000", // irmovq $8,%rax
+            "2007",                 // rrmovq %rax,%rdi
+            "10",                   // nop
+            "00",                   // halt
+        ];
+
+        let mem = hex::decode(obj.join("")).unwrap();
+        let mut vm = VM::from_memory(mem.clone());
+
+        vm.run();
+
+        assert_eq!(
+            vm,
+            VM {
+                registers: [8, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0],
+                stat: Stat::Hlt,
+                pc: mem.len() as u64,
+                mem,
+                ..Default::default()
+            }
+        )
     }
 }
