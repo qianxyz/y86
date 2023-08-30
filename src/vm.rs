@@ -154,22 +154,23 @@ impl VM {
             }
 
             // OPq
+            // HACK: Integers are internally represented as unsigned, but are casted to
+            // signed in arithmetic for the condition codes to be set properly.
             (0x6, 0x0..=0x3) => {
                 let (ra, rb) = advance!();
                 let a = self.registers[ra];
                 let b = self.registers[rb];
                 let (result, overflow) = match lo {
-                    0x0 => a.overflowing_add(b), // addq
-                    0x1 => a.overflowing_sub(b), // subq
-                    0x2 => (a & b, false),       // andq
-                    0x3 => (a ^ b, false),       // xorq
+                    0x0 => (a as i64).overflowing_add(b as i64), // addq
+                    0x1 => (a as i64).overflowing_sub(b as i64), // subq
+                    0x2 => ((a & b) as i64, false),              // andq
+                    0x3 => ((a ^ b) as i64, false),              // xorq
                     _ => unreachable!(),
                 };
                 self.of = overflow;
-                // FIXME: SF is set as if it is signed arithmetic
-                self.sf = (result as i64) < 0;
+                self.sf = result < 0;
                 self.zf = result == 0;
-                self.registers[ra] = result;
+                self.registers[ra] = result as u64;
             }
 
             // jXX
