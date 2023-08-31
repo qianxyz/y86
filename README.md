@@ -10,3 +10,9 @@ an educational instruction set architecture specified in
 $ yas t.ys -o t.yo
 $ yis t.yo
 ```
+
+## Roadmap
+
+- [x] Finish original implementation of `yas` and `yis`
+- [ ] Add graphical interface to `yis`
+- [ ] Implement pipelined processor
