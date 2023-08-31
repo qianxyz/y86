@@ -19,7 +19,7 @@ impl std::fmt::Display for DecodeError<'_> {
     }
 }
 
-pub(crate) fn decode<'a>(
+pub fn decode<'a>(
     obj: impl Iterator<Item = &'a str>,
 ) -> Result<[u8; MEM_SIZE], Vec<YisErrorContext<'a>>> {
     let mut memory = [0; MEM_SIZE];

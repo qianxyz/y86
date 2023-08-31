@@ -70,6 +70,7 @@ pub fn assemble<'a>(
     Ok(print)
 }
 
+pub use decode::decode;
 pub use vm::{Stat, VM};
 
 pub const MEM_SIZE: usize = 1 << 13;
@@ -91,12 +92,3 @@ impl std::fmt::Display for YisErrorContext<'_> {
 }
 
 impl std::error::Error for YisErrorContext<'_> {}
-
-pub fn emulate<'a>(obj: impl Iterator<Item = &'a str>) -> Result<VM, Vec<YisErrorContext<'a>>> {
-    let mem = decode::decode(obj)?;
-    let mut vm = vm::VM::from_memory(mem);
-
-    vm.run();
-
-    Ok(vm)
-}

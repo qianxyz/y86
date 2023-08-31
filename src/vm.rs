@@ -1,6 +1,6 @@
 use crate::MEM_SIZE;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct VM {
     pub registers: [u64; 16],
 
@@ -12,9 +12,12 @@ pub struct VM {
 
     pub pc: u64,
     pub mem: [u8; MEM_SIZE],
+
+    pub old_pc: u64,
+    pub nsteps: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Stat {
     /// Normal operation
     Aok,
@@ -29,8 +32,23 @@ pub enum Stat {
     Ins,
 }
 
+impl std::fmt::Display for Stat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Aok => "AOK",
+                Self::Hlt => "HLT",
+                Self::Adr => "ADR",
+                Self::Ins => "INS",
+            }
+        )
+    }
+}
+
 impl VM {
-    pub(crate) fn from_memory(mem: [u8; MEM_SIZE]) -> Self {
+    pub fn from_memory(mem: [u8; MEM_SIZE]) -> Self {
         Self {
             registers: [0; 16],
             zf: false,
@@ -39,6 +57,8 @@ impl VM {
             stat: Stat::Aok,
             pc: 0,
             mem,
+            old_pc: 0,
+            nsteps: 0,
         }
     }
 
@@ -118,6 +138,8 @@ impl VM {
                 read8!(*rsp - 8)
             }};
         }
+
+        self.old_pc = self.pc;
 
         let (hi, lo) = advance!();
 
@@ -212,9 +234,11 @@ impl VM {
 
             _ => self.stat = Stat::Ins,
         }
+
+        self.nsteps += 1;
     }
 
-    pub(crate) fn run(&mut self) {
+    pub fn run(&mut self) {
         while self.stat == Stat::Aok {
             self.step();
         }
